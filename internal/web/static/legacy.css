@@ -1,0 +1,192 @@
+.page {
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 12px 16px 96px;
+}
+
+.top { min-height: 64px; }
+.top:after,
+.row:after,
+.urlrow:after,
+.undo:after {
+  content: "";
+  display: block;
+  clear: both;
+}
+
+.mark {
+  float: left;
+  font-family: "Songti SC", "STSong", "Songti TC", serif;
+  font-size: 30px;
+  line-height: 64px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+:root[data-lang="en"] .mark {
+  font-family: "Avenir Next", "PingFang SC", "Segoe UI", sans-serif;
+  font-size: 28px;
+  letter-spacing: -0.04em;
+}
+
+.nav { float: right; padding-top: 10px; }
+.nav button { margin-left: 4px; }
+
+.nav button,
+.textbtn,
+.seal,
+.actions a,
+.actions button {
+  font-family: inherit;
+  font-size: 16px;
+  min-height: 44px;
+}
+
+.nav button,
+.textbtn,
+.actions a,
+.actions button {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  padding: 0 8px;
+}
+
+.seal {
+  background: var(--seal);
+  color: var(--seal-ink);
+  border: 0;
+  border-radius: 2px;
+  padding: 12px 16px;
+}
+
+.sheet,
+.slip {
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  margin-top: 14px;
+  padding: 16px;
+}
+
+.slip.is-new {
+  border-left: 3px solid var(--seal);
+  padding-left: 13px;
+}
+
+.lead { margin: 0 0 14px; font-size: 16px; }
+.hint { color: var(--muted); font-size: 16px; margin: 8px 0 0; }
+.err { color: var(--seal); font-size: 16px; margin: 8px 0 0; }
+.foot { margin-top: 28px; }
+.foot a { color: var(--muted); font-size: 16px; }
+
+label { display: block; font-size: 16px; margin-bottom: 6px; }
+
+input[type="password"],
+input[type="text"],
+textarea {
+  width: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: inherit;
+  font-size: 16px;
+  -webkit-appearance: none;
+}
+
+input[type="password"],
+input[type="text"] {
+  height: 44px;
+  padding: 0 12px;
+}
+
+textarea {
+  display: block;
+  min-height: 96px;
+  padding: 12px;
+  line-height: 1.5;
+}
+
+.field { margin-top: 14px; }
+.composer { position: relative; }
+.row { margin-top: 12px; }
+.row .seal { float: right; }
+.row .textbtn { float: left; }
+
+.meta { color: var(--muted); font-size: 16px; margin: 0 0 8px; }
+.body {
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.55;
+}
+.fname { margin: 0; word-wrap: break-word; font-size: 16px; }
+.shot {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  background: var(--bg);
+}
+
+.actions { margin-top: 8px; }
+.actions a,
+.actions button {
+  display: inline-block;
+  line-height: 44px;
+  margin: 0 8px 0 0;
+  text-decoration: none;
+}
+
+.url { word-wrap: break-word; font-size: 16px; margin-top: 8px; }
+.urlrow .textbtn { float: right; }
+
+.qr {
+  display: block;
+  width: 168px;
+  height: 168px;
+  margin-top: 12px;
+  background: var(--bg);
+}
+
+.undo {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  background: #1c1915;
+  color: #f3efe6;
+  padding: 8px 8px 8px 16px;
+  border-radius: 2px;
+}
+
+:root[data-theme="dark"] .undo {
+  background: #f3efe6;
+  color: #1c1915;
+}
+
+.undo span { line-height: 44px; }
+.undo button {
+  float: right;
+  font-family: inherit;
+  font-size: 16px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  min-height: 44px;
+  padding: 0 14px;
+}
+
+button:focus,
+a:focus,
+input:focus,
+textarea:focus {
+  outline: 2px solid var(--seal);
+}
+
+.wide { display: block; width: 100%; margin-top: 12px; }

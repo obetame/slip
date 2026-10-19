@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#f3efe6" id="theme-color">
+  <title>纸条</title>
+  <link rel="icon" href="/favicon.png">
+  <link rel="stylesheet" href="/tokens.css?v={{version}}">
+  <link rel="stylesheet" href="/app.css?v={{version}}">
+  <script src="/boot.js?v={{version}}"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="top">
+      <a class="mark" href="/" id="mark">纸条</a>
+      <nav class="nav" id="nav"></nav>
+    </header>
+    <main id="main"></main>
+    <p class="foot"><a href="/?ui=legacy" id="legacy-link">兼容页面</a></p>
+  </div>
+  <div id="undo" class="undo" hidden></div>
+  <div id="live" class="live" aria-live="polite"></div>
+  <noscript><p class="hint">需要启用 JavaScript。JavaScript is required.</p></noscript>
+  <script src="/api.js?v={{version}}"></script>
+  <script src="/app.js?v={{version}}"></script>
+</body>
+</html>

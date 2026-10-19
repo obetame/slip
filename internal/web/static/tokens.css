@@ -1,0 +1,91 @@
+:root {
+  --bg: #f3efe6;
+  --sheet: #faf7f2;
+  --ink: #1c1915;
+  --muted: #5e584e;
+  --line: #ddd4c6;
+  --seal: #8f2d2a;
+  --seal-ink: #f6f1e8;
+  --shadow: 0 1px 0 rgba(28, 25, 20, 0.05), 0 12px 32px rgba(28, 25, 20, 0.05);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #1a1816;
+  --sheet: #24211d;
+  --ink: #f3efe6;
+  --muted: #b7aea0;
+  --line: #3a342c;
+  --seal: #8f2d2a;
+  --seal-ink: #f6f1e8;
+  --shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+body {
+  font-family: "Avenir Next", "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  padding-top: 4px;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--seal);
+  z-index: 5;
+}
+
+[hidden] { display: none !important; }
+
+::selection {
+  background: #e7c3be;
+  color: #1c1915;
+}
+
+:root[data-theme="dark"] ::selection {
+  background: #8f2d2a;
+  color: #f6f1e8;
+}
+
+.copy-buffer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+  background: transparent;
+  font-size: 16px;
+  color: transparent;
+}
+
+.live, .clip {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  border: 0;
+}

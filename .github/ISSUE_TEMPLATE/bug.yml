@@ -1,0 +1,23 @@
+name: Bug
+description: Slip did something it should not do
+title: ""
+labels: ["bug"]
+body:
+  - type: textarea
+    attributes:
+      label: What happened
+      description: What you tried, and what Slip did. Do not include the household passphrase.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What you expected
+  - type: input
+    attributes:
+      label: Version
+      description: The version printed by `slip --version`, or the version shown in Settings.
+      placeholder: 0.1.0
+  - type: input
+    attributes:
+      label: Device and browser
+      placeholder: Mac, iPad, Windows. Safari, Chrome, or the compatible page.
