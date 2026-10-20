@@ -7,9 +7,18 @@ import (
 	"testing"
 )
 
+// TestLegacySyntax checks the built artifacts, not the TypeScript sources.
+// The sources are allowed to use modern syntax; tsc and esbuild are what
+// bring them down to ES5 (see tooling/build.mjs). Every bundle the pages
+// load is checked, because the legacy page loads core.js and boot.js too.
 func TestLegacySyntax(t *testing.T) {
 	rx := regexp.MustCompile("\\?\\.|(?:\\?\\?)|=>|`|\\b(?:const|let|class)\\b")
-	for _, name := range []string{"static/legacy.js", "static/api.js", "static/boot.js"} {
+	for _, name := range []string{
+		"static/core.js",
+		"static/app.js",
+		"static/legacy.js",
+		"static/boot.js",
+	} {
 		b, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
@@ -20,34 +29,10 @@ func TestLegacySyntax(t *testing.T) {
 	}
 }
 
-func TestLegacyCSS(t *testing.T) {
-	bad := []string{"gap:", ":has(", "aspect-ratio", "inset:", "oklch(", "color-mix(", ":focus-visible"}
-	for _, name := range []string{"static/legacy.css", "static/tokens.css"} {
-		b, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, s := range bad {
-			if bytes.Contains(b, []byte(s)) {
-				t.Errorf("%s contains %s", name, s)
-			}
-		}
-	}
-	legacy, err := os.ReadFile("static/legacy.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bytes.Contains(legacy, []byte("app.css")) || bytes.Contains(legacy, []byte("app.js")) {
-		t.Fatal("legacy page loads the modern assets")
-	}
-	index, err := os.ReadFile("static/index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(index, []byte("app.js")) || bytes.Contains(index, []byte("legacy.js")) {
-		t.Fatal("modern page should load app.js only")
-	}
-}
+// TestLegacyCSS and TestLegacyPageAssets live in css_compat_test.go, which uses
+// a small CSS declaration scanner instead of a substring match: a substring
+// check both fired on comments and values (e.g. `box-shadow: inset`) and missed
+// `GAP : 4px` or `aspect-ratio : 1`.
 
 func TestNoEmDash(t *testing.T) {
 	ents, err := os.ReadDir("static")

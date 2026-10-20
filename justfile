@@ -11,6 +11,18 @@ fmt:
 test:
 	go test ./...
 
+# Rebuild the browser client into internal/web/static.
+web:
+	cd tooling && npm run build
+
+# Fail if the committed bundles differ from the sources.
+web-check:
+	cd tooling && npm run build --silent && git diff --exit-code -- internal/web/static
+
+# Drive the built client in jsdom against a real server.
+browser-test:
+	bash scripts/browser-test.sh
+
 # Build ./slip for this machine.
 build:
 	go build -trimpath -ldflags="-s -w" -o slip ./cmd/slip

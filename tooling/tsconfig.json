@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES5",
+    "lib": ["DOM", "DOM.Iterable", "ES5", "ES2015.Promise", "ES2015.Iterable", "ES2015.Collection"],
+    "module": "ES2015",
+    "moduleResolution": "bundler",
+    "rootDir": "../internal/web/src",
+
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "noEmit": true,
+    "downlevelIteration": false,
+    "importHelpers": false,
+    "noEmitHelpers": false,
+    "isolatedModules": true,
+    "esModuleInterop": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["../internal/web/src/**/*.ts"]
+}

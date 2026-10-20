@@ -190,3 +190,47 @@ textarea:focus {
 }
 
 .wide { display: block; width: 100%; margin-top: 12px; }
+
+/* Search and text preview for the iOS 12 page. No flex gap, no inset,
+   no aspect-ratio: spacing is margins, and layout is flex without gap. */
+
+.searchbar {
+  display: flex;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.searchbar input.search {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 0 12px;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font: inherit;
+  font-size: 16px;
+  -webkit-appearance: none;
+}
+
+.searchbar .textbtn {
+  margin-left: 8px;
+}
+
+.preview {
+  margin-top: 10px;
+}
+
+.previewbody {
+  max-height: 320px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
