@@ -112,8 +112,13 @@ check("file slip shows its name", !!oneFile && board.indexOf(oneFile.name) !== -
 // search: type into state via a URL? The search uses the query state.
 // The composer is the only input, so drive filter through the Slip start
 // state by simulating a location search is not supported. Instead check the
-// preview control exists for a text attachment.
-check("preview control present for text attachment", !!modern.w.document.querySelector(".previewbtn"), modern.w.document.body.innerHTML.slice(0, 500));
+// The preview toggle sits in the action row of a previewable file slip,
+// alongside Copy, Download, and Delete.
+check(
+  "preview toggle is in the action row of a file slip",
+  !!modern.w.document.querySelector(".slip .row button"),
+  modern.w.document.body.innerHTML.slice(0, 400),
+);
 
 // --- legacy page ------------------------------------------------------
 console.log("legacy page");

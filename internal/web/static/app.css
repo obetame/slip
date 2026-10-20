@@ -444,3 +444,14 @@ textarea.editor-input:focus { outline: none; }
 .md .md-hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
 .md .md-link { color: var(--seal); }
 .md .md-cut { color: var(--muted); }
+
+/* Armed delete button and the file-name row. */
+
+.textbtn.danger {
+  color: var(--seal);
+  font-weight: 600;
+}
+
+.fname {
+  margin: 0;
+}

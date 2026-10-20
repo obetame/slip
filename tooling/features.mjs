@@ -163,7 +163,11 @@ await settle(60);
 check("dragleave hides the overlay", !!zone && zone.hidden === true, zone ? "hidden=" + zone.hidden : "no zone");
 
 console.log("text preview");
-const btn = p.doc.querySelector(".previewbtn");
+// The toggle lives in the file slip's action row. Pick the one whose label
+// matches Open in either language.
+const btn = Array.from(p.doc.querySelectorAll(".slip .row button")).find(
+  (b) => b.textContent === "Open" || b.textContent === "\u5c55\u5f00",
+);
 check("text attachment has a preview button", !!btn);
 if (btn) {
   btn.dispatchEvent(new p.w.Event("click", { bubbles: true }));
@@ -244,6 +248,39 @@ console.log("edit");
       check("edited body is shown", p.doc.getElementById("main").textContent.indexOf("edited body text") !== -1, p.doc.getElementById("main").textContent.slice(0, 200));
       check("an edited slip is marked", p.doc.getElementById("main").textContent.indexOf("edited") !== -1 || p.doc.getElementById("main").textContent.indexOf("\u5df2\u7f16\u8f91") !== -1, "no edited marker");
     }
+  }
+}
+
+console.log("delete confirm");
+{
+  const items = await (await fetch(base + "/api/items", { headers: { Cookie: cookie } })).json();
+  const before = (items.items || []).length;
+  check("board has slips to delete", before > 0, "count " + before);
+
+  const rm = Array.from(p.doc.querySelectorAll(".slip .row button")).find(
+    (b) => b.textContent === "Delete" || b.textContent === "\u5220\u9664",
+  );
+  check("a Delete button is present", !!rm);
+  if (rm) {
+    // First click arms, does not delete.
+    rm.dispatchEvent(new p.w.Event("click", { bubbles: true }));
+    await settle(100);
+    check("first click arms the button, nothing is gone yet",
+      rm.isConnected && rm.textContent !== "Delete" && rm.textContent !== "\u5220\u9664",
+      "label after first click: " + rm.textContent);
+    const afterArm = await (await fetch(base + "/api/items", { headers: { Cookie: cookie } })).json();
+    check("no delete request fired while armed", (afterArm.items || []).length === before);
+
+    // Second click deletes.
+    rm.dispatchEvent(new p.w.Event("click", { bubbles: true }));
+    await settle(300);
+    const afterDel = await (await fetch(base + "/api/items", { headers: { Cookie: cookie } })).json();
+    check("second click deletes", (afterDel.items || []).length === before - 1,
+      "before=" + before + " after=" + (afterDel.items || []).length);
+    check("the undo bar appears", !!p.doc.getElementById("undo") && !p.doc.getElementById("undo").hidden);
+    check("the undo bar says it is undoable",
+      p.doc.getElementById("undo").textContent.indexOf("undo") !== -1 || p.doc.getElementById("undo").textContent.indexOf("\u64a4\u9500") !== -1,
+      p.doc.getElementById("undo").textContent);
   }
 }
 
