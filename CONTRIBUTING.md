@@ -12,7 +12,7 @@ A tag `vX.Y.Z` on `main` publishes the binaries. The tag has to match `internal/
 
 ## Tests
 
-Go 1.23 or newer. [just](https://github.com/casey/just) is optional:
+Go 1.27 or newer. [just](https://github.com/casey/just) is optional:
 
 ```sh
 just test
@@ -26,7 +26,7 @@ gofmt -w .
 go test ./...
 ```
 
-CI runs the gofmt check and `go test ./...` on Ubuntu with Go 1.23. It runs on a pull request, and again when the result reaches `main`. `GOTOOLCHAIN=local`, so the job does not download a newer Go to satisfy a dependency. A module update that raises the `go` line is a language-version change and should update the docs in the same pull request.
+CI runs the gofmt check and `go test ./...` on Ubuntu with Go 1.27. It runs on a pull request, and again when the result reaches `main`. `GOTOOLCHAIN=local`, so the job does not download a newer Go to satisfy a dependency. A module update that raises the `go` line is a language-version change and should update the docs, the CI version, and the minimum version in `README.md` in the same pull request.
 
 The compatible page is `internal/web/static/legacy.js` plus `legacy.css`. It has to stay readable on iOS 12. Do not use optional chaining, nullish coalescing, arrow functions, template literals, `const`, `let`, `class`, flexbox `gap`, `:has`, `aspect-ratio`, `inset`, `oklch`, or `color-mix` in those files or in the shared `api.js`, `boot.js`, and `tokens.css`. `internal/web/syntax_test.go` checks this.
 

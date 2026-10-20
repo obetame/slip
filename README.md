@@ -33,7 +33,7 @@ On Windows, unzip `slip.exe` and run it from a command prompt. Windows may warn 
 
 ### Install with Go
 
-Go 1.23 or newer:
+Go 1.27 or newer:
 
 ```sh
 go install github.com/obetame/slip/cmd/slip@v0.1.0

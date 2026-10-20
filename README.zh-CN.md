@@ -33,7 +33,7 @@ sudo mv slip /usr/local/bin/slip
 
 ### 用 Go 安装
 
-需要 Go 1.23 或更新版本：
+需要 Go 1.27 或更新版本：
 
 ```sh
 go install github.com/obetame/slip/cmd/slip@v0.1.0
