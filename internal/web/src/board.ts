@@ -796,6 +796,28 @@ export function start(page: Page, node: Node): void {
     return parts.join(" · ");
   }
 
+  // confirmButton asks twice for anything hard to take back. The first
+  // click arms the button, the second click acts. Arming is forgotten on
+  // the next render, so nothing stays armed for long.
+  function confirmButton(label: string, confirmLabel: string, act: () => void): HTMLButtonElement {
+    const b = btn(label, function () {
+      if (b.dataset.armed === "1") {
+        act();
+        return;
+      }
+      b.dataset.armed = "1";
+      b.textContent = confirmLabel;
+      b.classList.add("danger");
+      setTimeout(function () {
+        if (!b.isConnected) return;
+        b.dataset.armed = "";
+        b.textContent = label;
+        b.classList.remove("danger");
+      }, 3000);
+    });
+    return b;
+  }
+
   function slipNode(it: Item, newest: boolean): HTMLElement {
     const id = safeID(it.id);
     const card = el("article", newest ? "slip is-new" : "slip");
@@ -818,7 +840,10 @@ export function start(page: Page, node: Node): void {
     } else {
       const nameRow = el("p", "fname", it.name || t("fileKind"));
       card.appendChild(nameRow);
-      if (id && previewable(it)) card.appendChild(previewBlock(it, id));
+      if (id && previewable(it)) {
+        const pv = previewBody(it, id);
+        if (pv) card.appendChild(pv);
+      }
     }
 
     const row = el("div", "row");
@@ -827,6 +852,22 @@ export function start(page: Page, node: Node): void {
         copyButtonText(it.text || "", copy);
       }, "textbtn");
       row.appendChild(copy);
+    }
+    if (id && previewable(it)) {
+      // The toggle sits with the other actions, not under the file name,
+      // so every operation on a slip is in one place.
+      const open = !!state.openPreview[id];
+      row.appendChild(
+        btn(open ? t("previewClose") : t("previewOpen"), function () {
+          if (state.openPreview[id]) {
+            delete state.openPreview[id];
+          } else {
+            state.openPreview[id] = true;
+            loadPreview(it, id);
+          }
+          if (state.view === "board") renderBoard();
+        }, "textbtn")
+      );
     }
     if (it.kind === "text" && id && state.editing !== id) {
       row.appendChild(
@@ -839,41 +880,29 @@ export function start(page: Page, node: Node): void {
     if (id && page.canPreview(it)) row.appendChild(fileLink(t("view"), "/api/items/" + id + "/raw"));
     if (id && it.kind !== "text") row.appendChild(fileLink(t("download"), "/api/items/" + id + "/raw?dl=1"));
     if (id) {
-      row.appendChild(
-        btn(t("remove"), function () {
-          removeItem(id);
-        }, "textbtn")
-      );
+      row.appendChild(confirmButton(t("remove"), t("confirmRemove"), function () {
+        removeItem(id);
+      }));
     }
     card.appendChild(row);
     return card;
   }
 
-  function previewBlock(it: Item, id: string): HTMLElement {
+  // previewBody renders the opened preview under the file name. The toggle
+  // itself lives in the action row, where the other actions are.
+  function previewBody(it: Item, id: string): HTMLElement | null {
+    if (!state.openPreview[id]) return null;
     const wrap = el("div", "preview");
-    const open = !!state.openPreview[id];
-    const toggle = btn(open ? t("previewClose") : t("previewOpen"), function () {
-      if (state.openPreview[id]) {
-        delete state.openPreview[id];
-      } else {
-        state.openPreview[id] = true;
-        loadPreview(it, id);
-      }
-      if (state.view === "board") renderBoard();
-    }, "textbtn previewbtn");
-    wrap.appendChild(toggle);
-    if (open) {
-      if (state.previewText[id] === undefined) {
-        wrap.appendChild(el("p", "hint", t("previewLoading")));
-      } else if (state.previewText[id] === null) {
-        wrap.appendChild(el("p", "hint", t("previewBinary")));
-      } else if (isMarkdown(it.name, it.mime)) {
-        const doc = el("div", "body previewbody md");
-        doc.appendChild(renderMarkdown(state.previewText[id] as string));
-        wrap.appendChild(doc);
-      } else {
-        wrap.appendChild(el("pre", "body previewbody", state.previewText[id] as string));
-      }
+    if (state.previewText[id] === undefined) {
+      wrap.appendChild(el("p", "hint", t("previewLoading")));
+    } else if (state.previewText[id] === null) {
+      wrap.appendChild(el("p", "hint", t("previewBinary")));
+    } else if (isMarkdown(it.name, it.mime)) {
+      const doc = el("div", "body previewbody md");
+      doc.appendChild(renderMarkdown(state.previewText[id] as string));
+      wrap.appendChild(doc);
+    } else {
+      wrap.appendChild(el("pre", "body previewbody", state.previewText[id] as string));
     }
     return wrap;
   }
@@ -1098,7 +1127,7 @@ export function start(page: Page, node: Node): void {
   function showUndo(): void {
     clear(node.undo);
     node.undo.hidden = false;
-    node.undo.appendChild(el("span", "", t("removed")));
+    node.undo.appendChild(el("span", "", t("removedUndo")));
     node.undo.appendChild(btn(t("undo"), doUndo));
     clearTimeout(state.undoTimer);
     state.undoTimer = setTimeout(function () {

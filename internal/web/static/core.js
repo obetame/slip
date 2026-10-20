@@ -81,6 +81,8 @@
       cancel: "取消",
       close: "关闭",
       edited: "已编辑",
+      confirmRemove: "确认删除？",
+      removedUndo: "已删除，8 秒内可撤销。",
       notText: "只有文字纸条能编辑。"
     },
     en: {
@@ -163,6 +165,8 @@
       cancel: "Cancel",
       close: "Close",
       edited: "edited",
+      confirmRemove: "Sure delete?",
+      removedUndo: "Deleted. You can undo for 8 seconds.",
       notText: "Only text slips can be edited."
     }
   };
@@ -1368,6 +1372,25 @@
         parts.push(t("edited"));
       return parts.join(" · ");
     }
+    function confirmButton(label, confirmLabel, act) {
+      var b = btn(label, function() {
+        if (b.dataset.armed === "1") {
+          act();
+          return;
+        }
+        b.dataset.armed = "1";
+        b.textContent = confirmLabel;
+        b.classList.add("danger");
+        setTimeout(function() {
+          if (!b.isConnected)
+            return;
+          b.dataset.armed = "";
+          b.textContent = label;
+          b.classList.remove("danger");
+        }, 3e3);
+      });
+      return b;
+    }
     function slipNode(it, newest) {
       var id = safeID(it.id);
       var card = el("article", newest ? "slip is-new" : "slip");
@@ -1389,8 +1412,11 @@
       } else {
         var nameRow = el("p", "fname", it.name || t("fileKind"));
         card.appendChild(nameRow);
-        if (id && previewable(it))
-          card.appendChild(previewBlock(it, id));
+        if (id && previewable(it)) {
+          var pv = previewBody(it, id);
+          if (pv)
+            card.appendChild(pv);
+        }
       }
       var row = el("div", "row");
       if (it.kind === "text") {
@@ -1398,6 +1424,19 @@
           copyButtonText(it.text || "", copy_1);
         }, "textbtn");
         row.appendChild(copy_1);
+      }
+      if (id && previewable(it)) {
+        var open_1 = !!state.openPreview[id];
+        row.appendChild(btn(open_1 ? t("previewClose") : t("previewOpen"), function() {
+          if (state.openPreview[id]) {
+            delete state.openPreview[id];
+          } else {
+            state.openPreview[id] = true;
+            loadPreview(it, id);
+          }
+          if (state.view === "board")
+            renderBoard();
+        }, "textbtn"));
       }
       if (it.kind === "text" && id && state.editing !== id) {
         row.appendChild(btn(t("edit"), function() {
@@ -1411,39 +1450,27 @@
       if (id && it.kind !== "text")
         row.appendChild(fileLink(t("download"), "/api/items/" + id + "/raw?dl=1"));
       if (id) {
-        row.appendChild(btn(t("remove"), function() {
+        row.appendChild(confirmButton(t("remove"), t("confirmRemove"), function() {
           removeItem(id);
-        }, "textbtn"));
+        }));
       }
       card.appendChild(row);
       return card;
     }
-    function previewBlock(it, id) {
+    function previewBody(it, id) {
+      if (!state.openPreview[id])
+        return null;
       var wrap = el("div", "preview");
-      var open = !!state.openPreview[id];
-      var toggle = btn(open ? t("previewClose") : t("previewOpen"), function() {
-        if (state.openPreview[id]) {
-          delete state.openPreview[id];
-        } else {
-          state.openPreview[id] = true;
-          loadPreview(it, id);
-        }
-        if (state.view === "board")
-          renderBoard();
-      }, "textbtn previewbtn");
-      wrap.appendChild(toggle);
-      if (open) {
-        if (state.previewText[id] === void 0) {
-          wrap.appendChild(el("p", "hint", t("previewLoading")));
-        } else if (state.previewText[id] === null) {
-          wrap.appendChild(el("p", "hint", t("previewBinary")));
-        } else if (isMarkdown(it.name, it.mime)) {
-          var doc = el("div", "body previewbody md");
-          doc.appendChild(render(state.previewText[id]));
-          wrap.appendChild(doc);
-        } else {
-          wrap.appendChild(el("pre", "body previewbody", state.previewText[id]));
-        }
+      if (state.previewText[id] === void 0) {
+        wrap.appendChild(el("p", "hint", t("previewLoading")));
+      } else if (state.previewText[id] === null) {
+        wrap.appendChild(el("p", "hint", t("previewBinary")));
+      } else if (isMarkdown(it.name, it.mime)) {
+        var doc = el("div", "body previewbody md");
+        doc.appendChild(render(state.previewText[id]));
+        wrap.appendChild(doc);
+      } else {
+        wrap.appendChild(el("pre", "body previewbody", state.previewText[id]));
       }
       return wrap;
     }
@@ -1654,7 +1681,7 @@
     function showUndo() {
       clear(node.undo);
       node.undo.hidden = false;
-      node.undo.appendChild(el("span", "", t("removed")));
+      node.undo.appendChild(el("span", "", t("removedUndo")));
       node.undo.appendChild(btn(t("undo"), doUndo));
       clearTimeout(state.undoTimer);
       state.undoTimer = setTimeout(function() {

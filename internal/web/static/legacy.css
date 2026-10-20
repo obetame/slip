@@ -315,3 +315,14 @@ textarea.editor-input:focus {
 .md .md-link {
   color: var(--seal);
 }
+
+/* The armed delete button. */
+
+.textbtn.danger {
+  color: var(--seal);
+  font-weight: 600;
+}
+
+.fname {
+  margin: 0;
+}

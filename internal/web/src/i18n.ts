@@ -86,6 +86,8 @@ export const STR: { [lang: string]: { [key: string]: string } } = {
     cancel: "取消",
     close: "关闭",
     edited: "已编辑",
+    confirmRemove: "确认删除？",
+    removedUndo: "已删除，8 秒内可撤销。",
     notText: "只有文字纸条能编辑。"
   },
   en: {
@@ -168,6 +170,8 @@ export const STR: { [lang: string]: { [key: string]: string } } = {
     cancel: "Cancel",
     close: "Close",
     edited: "edited",
+    confirmRemove: "Sure delete?",
+    removedUndo: "Deleted. You can undo for 8 seconds.",
     notText: "Only text slips can be edited."
   }
 };
