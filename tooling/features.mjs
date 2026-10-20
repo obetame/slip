@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { deflateSync } from "node:zlib";
 
 const JSDOM_VERSION = createRequire(import.meta.url)("jsdom/package.json").version;
 
@@ -24,6 +25,51 @@ function check(name, cond, detail) {
   }
 }
 const settle = (ms = 150) => new Promise((r) => setTimeout(r, ms));
+
+// A minimal but valid 8x8 red PNG, built once.
+const PNG_8X8 = (() => {
+  const crcTable = [];
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    crcTable[n] = c >>> 0;
+  }
+  const crc = (buf) => {
+    let c = 0xffffffff;
+    for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const sum = Buffer.alloc(4);
+    sum.writeUInt32BE(crc(body));
+    return Buffer.concat([len, body, sum]);
+  };
+  const w = 8, h = 8;
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) {
+    raw[y * (w * 3 + 1)] = 0;
+    for (let x = 0; x < w; x++) {
+      const o = y * (w * 3 + 1) + 1 + x * 3;
+      raw[o] = 200; raw[o + 1] = 30; raw[o + 2] = 30;
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; ihdr[9] = 2;
+  return new Uint8Array(
+    Buffer.concat([
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      chunk("IHDR", ihdr),
+      chunk("IDAT", deflateSync(raw)),
+      chunk("IEND", Buffer.alloc(0)),
+    ]),
+  );
+})();
+
 
 async function page(cookie) {
   const html = readFileSync(join(staticDir, "index.html"), "utf8").replace(/\{\{version\}\}/g, "t");
@@ -176,6 +222,119 @@ live.dispatchEvent(fakeDrop(p.w, [png]));
 await settle(250);
 p.doc.removeEventListener("drop", probe);
 check("a drop is delivered to the page once", seq.length === 1, "handled " + seq.length + " times");
+
+console.log("edit");
+{
+  // Edit the first text slip and confirm the board keeps it in place.
+  const editBtn = Array.from(p.doc.querySelectorAll(".slip button")).find((b) => b.textContent === "Edit" || b.textContent === "\u7f16\u8f91");
+  check("text slips offer Edit", !!editBtn, Array.from(p.doc.querySelectorAll(".slip button")).map((b) => b.textContent).slice(0, 12).join(","));
+  if (editBtn) {
+    const before = p.doc.querySelectorAll(".slip").length;
+    editBtn.dispatchEvent(new p.w.Event("click", { bubbles: true }));
+    await settle(150);
+    const box = p.doc.querySelector("textarea.editor-input");
+    check("editor opens in place", !!box, p.doc.getElementById("main").innerHTML.slice(0, 300));
+    if (box) {
+      box.value = "edited body text";
+      const saveBtn = Array.from(p.doc.querySelectorAll(".editor button")).find((b) => b.textContent === "Save" || b.textContent === "\u4fdd\u5b58");
+      saveBtn.dispatchEvent(new p.w.Event("click", { bubbles: true }));
+      await settle(400);
+      const after = p.doc.querySelectorAll(".slip").length;
+      check("edit saved without adding or removing slips", after === before, "before=" + before + " after=" + after);
+      check("edited body is shown", p.doc.getElementById("main").textContent.indexOf("edited body text") !== -1, p.doc.getElementById("main").textContent.slice(0, 200));
+      check("an edited slip is marked", p.doc.getElementById("main").textContent.indexOf("edited") !== -1 || p.doc.getElementById("main").textContent.indexOf("\u5df2\u7f16\u8f91") !== -1, "no edited marker");
+    }
+  }
+}
+
+console.log("image viewer");
+{
+  // The page's fetch stub answers uploads locally, so send this one over the
+  // real network instead. That way the server makes a thumbnail and the board
+  // has an image to open.
+  const realFd = new FormData();
+  realFd.append("file", new Blob([PNG_8X8], { type: "image/png" }), "view-me.png");
+  const up = await fetch(base + "/api/files", {
+    method: "POST",
+    headers: { "X-Slip": "1", Cookie: cookie },
+    body: realFd,
+  });
+  check("image uploaded over the real network", up.ok, "status " + up.status);
+  const refreshBtn = Array.from(p.doc.querySelectorAll(".nav button")).find((b) => b.textContent === "Refresh" || b.textContent === "\u5237\u65b0");
+  if (refreshBtn) refreshBtn.dispatchEvent(new p.w.Event("click", { bubbles: true }));
+  await settle(500);
+
+  const shot = p.doc.querySelector(".shot");
+  check("image slip renders a thumbnail", !!shot);
+  if (shot) {
+    shot.dispatchEvent(new p.w.Event("click", { bubbles: true }));
+    await settle(200);
+    const layer = p.doc.getElementById("viewer");
+    check("clicking the thumbnail opens the viewer", !!layer);
+    check("viewer shows the full image", !!layer && !!layer.querySelector(".viewer-img"));
+    const full = layer.querySelector(".viewer-img");
+    check("viewer loads the raw file", !!full && full.src.indexOf("/raw") !== -1, full && full.src);
+    // Escape closes it.
+    p.doc.dispatchEvent(new p.w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await settle(150);
+    check("Escape closes the viewer", !p.doc.getElementById("viewer"));
+  }
+}
+
+console.log("keyboard");
+{
+  // "/" focuses the search field.
+  const target = p.doc.querySelector(".slip") || p.doc.getElementById("main");
+  target.dispatchEvent(new p.w.MouseEvent("mousedown", { bubbles: true }));
+  p.doc.body.focus();
+  p.doc.dispatchEvent(new p.w.KeyboardEvent("keydown", { key: "/", bubbles: true }));
+  await settle(150);
+  const active = p.doc.activeElement;
+  check('"/" focuses the search field', !!active && active.className === "search", active ? active.tagName + "." + active.className : "none");
+}
+
+console.log("markdown render");
+{
+  // Drive the renderer directly: it is the piece with the safety rules.
+  const R = p.w.Slip.renderMarkdown;
+  check("renderer is exposed", typeof R === "function");
+
+  function html(src) {
+    const d = p.w.document.createElement("div");
+    d.appendChild(R(src));
+    return { doc: d, text: d.textContent, tag: (t) => d.querySelector(t) };
+  }
+
+  const h = html("# Title\n\nhello **bold** and *italic*.");
+  check("heading renders", h.tag("h1") && h.tag("h1").textContent === "Title", h.text.slice(0, 80));
+  check("bold renders", !!h.tag("strong"));
+  check("italic renders", !!h.tag("em"));
+
+  const list = html("- one\n- two");
+  check("list renders two items", list.doc.querySelectorAll("li").length === 2);
+
+  const code = html("```\nvar a = 1;\n```");
+  check("fenced code renders", !!code.tag("pre") && code.text.indexOf("var a = 1") !== -1);
+
+  const quote = html("> quoted");
+  check("block quote renders", !!quote.tag("blockquote"));
+
+  // A raw script tag must never become markup.
+  const evil = html('<script>alert(1)</script>');
+  check("script tag stays text", !evil.tag("script"), "a script element was created");
+  check("script text is visible as text", evil.text.indexOf("<script>") !== -1, evil.text);
+
+  // javascript: links must not become anchors.
+  const js = html("[click](javascript:alert(1))");
+  check("javascript: link is not an anchor", !js.tag("a"), "an anchor was created for javascript:");
+  check("javascript: text survives literally", js.text.indexOf("javascript:") !== -1, js.text);
+
+  const good = html("[site](https://example.com)");
+  check("https link becomes an anchor", !!good.tag("a") && good.tag("a").href.indexOf("https://example.com") === 0);
+
+  const img = html('<img src=x onerror=alert(1)>');
+  check("img tag is not created", !img.tag("img"));
+}
 
 console.log("console");
 check("no script errors", p.errs.filter((e) => !/Not implemented|Could not parse CSS/.test(e)).length === 0, p.errs.join(" | "));

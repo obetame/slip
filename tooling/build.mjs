@@ -102,8 +102,54 @@ function lineOf(code, index) {
   return line;
 }
 
+// A backtick inside a regular expression is plain ES5; only a real template
+// literal leaves one in the emitted code. Regular expressions have to be
+// cleared first, because the string scanner otherwise treats the pair of
+// backticks in /^```/ as opening and closing quotes and mangles the rest of
+// the file. A regex can follow an operator, an opening bracket, or a keyword
+// such as return, and esbuild drops the parentheses around those, so the
+// check looks at the last token rather than a single character.
+const REGEX_AFTER_KEYWORD = /(?:^|[^A-Za-z0-9_$])(return|typeof|case|do|else|in|of|new|delete|void|throw|instanceof|yield|await)\s*$/;
+
+function stripRegexLiterals(code) {
+  let out = "";
+  let i = 0;
+  while (i < code.length) {
+    const c = code[i];
+    if (c === "/" && code[i + 1] !== "/" && code[i + 1] !== "*") {
+      const before = out.replace(/\s+$/, "");
+      const last = before.charAt(before.length - 1);
+      const mayStart = last === "" || "=([,:[!&|?{};+-*%~^<>".indexOf(last) !== -1 || REGEX_AFTER_KEYWORD.test(before);
+      if (mayStart) {
+        let j = i + 1;
+        let inClass = false;
+        while (j < code.length) {
+          const d = code[j];
+          if (d === "\\") {
+            j += 2;
+            continue;
+          }
+          if (d === "\n") break;
+          if (d === "[") inClass = true;
+          else if (d === "]") inClass = false;
+          else if (d === "/" && !inClass) break;
+          j++;
+        }
+        if (code[j] === "/") {
+          out += "//";
+          i = j + 1;
+          continue;
+        }
+      }
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
 function assertEs5(code, where) {
-  const bare = stripCommentsAndStrings(code);
+  const bare = stripCommentsAndStrings(stripRegexLiterals(code));
   for (const rule of FORBIDDEN) {
     const m = rule.re.exec(bare);
     if (m) {

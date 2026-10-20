@@ -431,3 +431,82 @@ func fileForm(t *testing.T, name string, content []byte) (*bytes.Buffer, string)
 	}
 	return &buf, ct
 }
+
+func TestEditItem(t *testing.T) {
+	s, st := newTest(t)
+	token := setupPass(t, s)
+
+	cur := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	st.SetClock(func() time.Time { return cur })
+
+	rr := postJSON(t, s, "/api/text", loopback, token, `{"text":"before"}`)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create %d %s", rr.Code, rr.Body.String())
+	}
+	var created struct {
+		Item struct {
+			ID string `json:"id"`
+		} `json:"item"`
+	}
+	decode(t, rr, &created)
+	id := created.Item.ID
+
+	patch := func(body string, hdr http.Header) *httptest.ResponseRecorder {
+		return call(t, s, http.MethodPatch, "/api/items/"+id, loopback, token, strings.NewReader(body), hdr)
+	}
+	jsonHdr := http.Header{
+		"Content-Type": []string{"application/json"},
+		"X-Slip":       []string{"1"},
+	}
+
+	// The CSRF header is required for PATCH too.
+	if rr := patch(`{"text":"after"}`, nil); rr.Code != http.StatusForbidden || errCode(t, rr) != "forbidden" {
+		t.Fatalf("missing header %d %s", rr.Code, rr.Body.String())
+	}
+
+	cur = cur.Add(time.Minute)
+	rr = patch(`{"text":"after"}`, jsonHdr)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("edit %d %s", rr.Code, rr.Body.String())
+	}
+	var edited struct {
+		Item struct {
+			Text      string `json:"text"`
+			CreatedAt string `json:"createdAt"`
+			EditedAt  string `json:"editedAt"`
+		} `json:"item"`
+	}
+	decode(t, rr, &edited)
+	if edited.Item.Text != "after" {
+		t.Fatalf("text = %q", edited.Item.Text)
+	}
+	if edited.Item.EditedAt == "" {
+		t.Fatal("editedAt missing from the response")
+	}
+
+	// List shows the new body and keeps the original time.
+	rr = call(t, s, http.MethodGet, "/api/items", loopback, token, nil, nil)
+	var page struct {
+		Items []struct {
+			ID       string `json:"id"`
+			Text     string `json:"text"`
+			EditedAt string `json:"editedAt"`
+		} `json:"items"`
+	}
+	decode(t, rr, &page)
+	if len(page.Items) != 1 || page.Items[0].Text != "after" {
+		t.Fatalf("list after edit: %+v", page.Items)
+	}
+	if page.Items[0].EditedAt == "" {
+		t.Fatal("list omitted editedAt")
+	}
+
+	// Empty body and unknown id are rejected.
+	if rr := patch(`{"text":"   "}`, jsonHdr); rr.Code != http.StatusBadRequest || errCode(t, rr) != "empty" {
+		t.Fatalf("blank %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := call(t, s, http.MethodPatch, "/api/items/0123456789abcdef", loopback, token,
+		strings.NewReader(`{"text":"x"}`), jsonHdr); rr.Code != http.StatusNotFound {
+		t.Fatalf("unknown id %d", rr.Code)
+	}
+}

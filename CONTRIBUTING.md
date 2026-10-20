@@ -46,6 +46,8 @@ TypeScript is allowed to use modern syntax; the compiler is what makes the outpu
 
 CSS has no compiler, so `internal/web/css_compat_test.go` scans `tokens.css` and `legacy.css` for properties and functions iOS 12 ignores, including `gap`, `:has`, `aspect-ratio`, `inset`, `oklch`, and `color-mix`. Do not use those in either sheet; `app.css` is only loaded by the modern page.
 
+Markdown for text attachments is rendered by `internal/web/src/markdown.ts`. It builds nodes with the DOM API and puts text in through `textContent`, never `innerHTML`, and it only turns http and https into links. Keep it that way: the content comes from a file someone dropped on the board and the page shares an origin with the passphrase form.
+
 The strings for both languages are in `internal/web/src/i18n.ts`. `internal/web/text_test.go` checks that the two tables have the same keys.
 
 User-facing text should not use an em dash.
