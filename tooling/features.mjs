@@ -251,6 +251,38 @@ console.log("edit");
   }
 }
 
+console.log("visible errors");
+{
+  // A delete that fails must say so where the person is looking, not only in
+  // an aria-live region nobody sees.
+  const bar = p.doc.getElementById("undo");
+  bar.hidden = true;
+  const rm = Array.from(p.doc.querySelectorAll(".slip .row button")).find(
+    (b) => b.textContent === "Delete" || b.textContent === "\u5220\u9664",
+  );
+  if (rm) {
+    // Force the request to fail by pointing the page at a bad path.
+    const realFetch = p.w.fetch;
+    p.w.fetch = async (path, opts) => {
+      if (opts && opts.method === "DELETE") {
+        return { ok: false, status: 500, headers: { get: () => "application/json" }, json: async () => ({ error: "bad_request" }), text: async () => "" };
+      }
+      return realFetch(path, opts);
+    };
+    rm.dispatchEvent(new p.w.Event("click", { bubbles: true })); // arm
+    await settle(80);
+    rm.dispatchEvent(new p.w.Event("click", { bubbles: true })); // act
+    await settle(300);
+    p.w.fetch = realFetch;
+    const shown = bar.hidden === false && bar.textContent.trim().length > 0;
+    check("a failed delete is visible at the bottom", shown, "bar hidden=" + bar.hidden + " text=" + JSON.stringify(bar.textContent));
+  }
+  // Restore state for the later tests.
+  const fresh = Array.from(p.doc.querySelectorAll(".slip .row button")).find(
+    (b) => b.textContent === "Refresh" || b.textContent === "\u5237\u65b0",
+  );
+}
+
 console.log("delete confirm");
 {
   const items = await (await fetch(base + "/api/items", { headers: { Cookie: cookie } })).json();
