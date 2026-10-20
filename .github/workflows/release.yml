@@ -107,9 +107,21 @@ jobs:
           tar -xzf "$archive" -C "$RUNNER_TEMP"
           codesign --verify --strict --verbose=2 "$RUNNER_TEMP/slip"
           # spctl is the real test: it fails for a signed but un-notarized
-          # binary, which is exactly what this job exists to prevent. slip is
-          # a tool people execute, so the exec policy is the one that matters.
-          spctl -a -vvv -t exec "$RUNNER_TEMP/slip" || {
+          # binary, which is exactly what this job exists to prevent.
+          #
+          # The type is install, not exec, and that is measured rather than
+          # assumed. On macOS 26, exec rejects a bare executable out of hand,
+          # even a signed one from Apple itself:
+          #
+          #   spctl -a -vvv -t exec /bin/ls
+          #   /bin/ls: rejected (the code is valid but does not seem to be an app)
+          #
+          # exec is a policy about app bundles. install is the one that
+          # answers for a command line tool, and it is the type that reported
+          # "source=Unnotarized Developer ID" for the signed but unnotarized
+          # build during local testing. slip is still notarized through the
+          # binary's own ticket; only the way of asking about it changes.
+          spctl -a -vvv -t install "$RUNNER_TEMP/slip" || {
             echo "Gatekeeper rejects the archive; check the notarization secrets" >&2
             exit 1
           }
