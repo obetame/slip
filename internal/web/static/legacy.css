@@ -234,3 +234,84 @@ textarea:focus {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Editing and rendered Markdown on the iOS 12 page. No inset, no gap:
+   the editor is a plain block and the viewer uses explicit offsets. */
+
+.editor {
+  margin-bottom: 8px;
+}
+
+textarea.editor-input {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  padding: 12px;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--seal);
+  border-radius: 2px;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  resize: vertical;
+  -webkit-appearance: none;
+}
+
+textarea.editor-input:focus {
+  outline: none;
+}
+
+.md {
+  line-height: 1.6;
+}
+
+.md .md-h {
+  margin: 12px 0 6px;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.md .md-p {
+  margin: 0 0 10px;
+}
+
+.md .md-pre {
+  margin: 0 0 10px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  overflow-x: auto;
+  font-size: 13px;
+}
+
+.md .md-code {
+  padding: 1px 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-size: 13px;
+}
+
+.md .md-list {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.md .md-quote {
+  margin: 0 0 10px;
+  padding-left: 12px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+
+.md .md-hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 12px 0;
+}
+
+.md .md-link {
+  color: var(--seal);
+}

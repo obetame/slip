@@ -9,6 +9,7 @@ import { byteLength, formatBytes, formatTime, kindLabel, safeID, storeGet, store
 import { copyText } from "./clipboard";
 import { classifyPaste, previewable, isURL } from "./clip";
 import { start } from "./board";
+import { render as renderMarkdown, isMarkdown } from "./markdown";
 import type { Page } from "./types";
 
 const w = window as any;
@@ -27,6 +28,8 @@ w.Slip = {
   safeID: safeID,
   previewable: previewable,
   classifyPaste: classifyPaste,
+  renderMarkdown: renderMarkdown,
+  isMarkdown: isMarkdown,
   isURL: isURL,
   storeGet: storeGet,
   storeSet: storeSet,

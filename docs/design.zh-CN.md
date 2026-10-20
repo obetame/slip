@@ -122,6 +122,7 @@ Content-Security-Policy: default-src 'self'; img-src 'self' blob:; style-src 'se
 | GET | `/api/items/{id}/raw` | 已登录。`?dl=1` 强制下载。 |
 | GET | `/api/items/{id}/thumb` | 已登录，JPEG 预览 |
 | DELETE | `/api/items/{id}` | 已登录。软删除。 |
+| PATCH | `/api/items/{id}` | 已登录。JSON `{"text":"..."}`。只限文字纸条。保留 `createdAt` 和在纸堆里的位置，写入 `editedAt`。 |
 | POST | `/api/restore` | 已登录。JSON `{"ids":[...]}`，且还在撤销窗口内。 |
 | POST | `/api/clear` | 已登录。软删除所有还看得到的纸条。 |
 

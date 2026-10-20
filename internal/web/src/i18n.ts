@@ -80,7 +80,13 @@ export const STR: { [lang: string]: { [key: string]: string } } = {
     previewLoading: "正在读取",
     previewTooBig: "文件太大，不能在这里展开。",
     previewFailed: "读不出来，请下载。",
-    previewBinary: "这种文件不能预览。"
+    previewBinary: "这种文件不能预览。",
+    edit: "编辑",
+    save: "保存",
+    cancel: "取消",
+    close: "关闭",
+    edited: "已编辑",
+    notText: "只有文字纸条能编辑。"
   },
   en: {
     mark: "Slip",
@@ -156,7 +162,13 @@ export const STR: { [lang: string]: { [key: string]: string } } = {
     previewLoading: "Reading",
     previewTooBig: "Too large to open here.",
     previewFailed: "Could not read it. Try Download.",
-    previewBinary: "This file cannot be previewed."
+    previewBinary: "This file cannot be previewed.",
+    edit: "Edit",
+    save: "Save",
+    cancel: "Cancel",
+    close: "Close",
+    edited: "edited",
+    notText: "Only text slips can be edited."
   }
 };
 

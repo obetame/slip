@@ -36,6 +36,7 @@ var (
 	ErrQuota    = errors.New("quota")
 	ErrEmpty    = errors.New("empty")
 	ErrGone     = errors.New("gone")
+	ErrNotText  = errors.New("not_text")
 )
 
 // Item is one slip. Blob is the sha256 of a file body and is not sent
@@ -45,6 +46,7 @@ type Item struct {
 	Kind      string     `json:"kind"`
 	CreatedAt time.Time  `json:"createdAt"`
 	DeletedAt *time.Time `json:"deletedAt,omitempty"`
+	EditedAt  *time.Time `json:"editedAt,omitempty"`
 	Text      string     `json:"text,omitempty"`
 	Name      string     `json:"name,omitempty"`
 	Size      int64      `json:"size,omitempty"`
@@ -55,19 +57,20 @@ type Item struct {
 
 // Public is the browser view of an item.
 type Public struct {
-	ID        string    `json:"id"`
-	Kind      string    `json:"kind"`
-	CreatedAt time.Time `json:"createdAt"`
-	Text      string    `json:"text,omitempty"`
-	Name      string    `json:"name,omitempty"`
-	Size      int64     `json:"size,omitempty"`
-	Mime      string    `json:"mime,omitempty"`
-	HasThumb  bool      `json:"hasThumb,omitempty"`
+	ID        string     `json:"id"`
+	Kind      string     `json:"kind"`
+	CreatedAt time.Time  `json:"createdAt"`
+	EditedAt  *time.Time `json:"editedAt,omitempty"`
+	Text      string     `json:"text,omitempty"`
+	Name      string     `json:"name,omitempty"`
+	Size      int64      `json:"size,omitempty"`
+	Mime      string     `json:"mime,omitempty"`
+	HasThumb  bool       `json:"hasThumb,omitempty"`
 }
 
 func (it Item) Public() Public {
 	return Public{
-		ID: it.ID, Kind: it.Kind, CreatedAt: it.CreatedAt,
+		ID: it.ID, Kind: it.Kind, CreatedAt: it.CreatedAt, EditedAt: it.EditedAt,
 		Text: it.Text, Name: it.Name, Size: it.Size, Mime: it.Mime, HasThumb: it.HasThumb,
 	}
 }
@@ -170,6 +173,40 @@ func (s *Store) AddText(text string) (Item, error) {
 		return Item{}, err
 	}
 	return it, nil
+}
+
+// EditText replaces the body of a text slip. The slip keeps its place in
+// the stack and its original CreatedAt, so editing does not reshuffle the
+// board; EditedAt records when the body last changed. Only text slips can
+// be edited: a file slip's body is a blob, not something to rewrite here.
+func (s *Store) EditText(id, text string) (Item, error) {
+	if strings.TrimSpace(text) == "" || !utf8.ValidString(text) {
+		return Item{}, ErrEmpty
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(text) > s.maxText {
+		return Item{}, ErrTooLarge
+	}
+	for i := range s.items {
+		it := &s.items[i]
+		if it.ID != id || it.DeletedAt != nil {
+			continue
+		}
+		if it.Kind != KindText {
+			return Item{}, ErrNotText
+		}
+		prevText, prevEdited := it.Text, it.EditedAt
+		now := s.now().UTC()
+		it.Text = text
+		it.EditedAt = &now
+		if err := s.saveLocked(); err != nil {
+			it.Text, it.EditedAt = prevText, prevEdited
+			return Item{}, err
+		}
+		return *it, nil
+	}
+	return Item{}, ErrNotFound
 }
 
 // FileLimit is the configured per-file cap.

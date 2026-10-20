@@ -12,6 +12,7 @@ import { t, lang } from "./i18n";
 import { byteLength, formatBytes, formatTime, kindLabel, safeID, storeSet, themeNow } from "./format";
 import { allFiles, classifyPaste, previewable } from "./clip";
 import { copyText } from "./clipboard";
+import { render as renderMarkdown, isMarkdown } from "./markdown";
 import type { Bootstrap, Item, ItemsBody, Page, View } from "./types";
 
 export interface Node {
@@ -41,6 +42,8 @@ interface State {
   draft: string;
   query: string;
   openPreview: { [id: string]: boolean };
+  editing: string;
+  viewer: { id: string; name: string } | null;
   previewText: { [id: string]: string | null };
   errEl: HTMLElement | null;
 }
@@ -66,6 +69,8 @@ export function start(page: Page, node: Node): void {
     draft: "",
     query: "",
     openPreview: {},
+    editing: "",
+    viewer: null,
     previewText: {},
     errEl: null
   };
@@ -82,6 +87,62 @@ export function start(page: Page, node: Node): void {
   function setOver(on: boolean): void {
     if (formEl) formEl.className = on ? "sheet composer is-over" : "sheet composer";
     page.setDragging(on);
+  }
+
+  // isTyping reports whether the focus is in a field, where a bare letter
+  // should type rather than trigger a shortcut.
+  function isTyping(): boolean {
+    const a = document.activeElement as HTMLElement | null;
+    if (!a) return false;
+    const tag = a.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || a.isContentEditable === true;
+  }
+
+  // installKeys runs once. "/" focuses the search field, Escape closes
+  // the viewer or drops out of search, and the arrows move between
+  // pictures while the viewer is open.
+  function installKeys(): void {
+    document.addEventListener("keydown", function (e) {
+      if (state.viewer) {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeViewer();
+          return;
+        }
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          viewerStep(-1);
+          return;
+        }
+        if (e.key === "ArrowRight") {
+          e.preventDefault();
+          viewerStep(1);
+          return;
+        }
+      }
+      if (e.key === "Escape" && state.query && !isTyping()) {
+        e.preventDefault();
+        state.query = "";
+        route();
+        return;
+      }
+      if (e.key === "/" && !isTyping() && state.view === "board") {
+        e.preventDefault();
+        const field = node.main.querySelector(".search") as HTMLInputElement | null;
+        if (field) {
+          field.focus();
+        } else {
+          state.query = " ";
+          route();
+          const next = node.main.querySelector(".search") as HTMLInputElement | null;
+          if (next) {
+            next.value = "";
+            state.query = "";
+            next.focus();
+          }
+        }
+      }
+    });
   }
 
   // installDragHandlers runs once. Binding to the document is what makes a
@@ -192,6 +253,8 @@ export function start(page: Page, node: Node): void {
   }
 
   function loseAuth(): void {
+    state.viewer = null;
+    paintViewer();
     if (state.boot) state.boot.authed = false;
     state.view = "login";
     state.items = [];
@@ -729,6 +792,7 @@ export function start(page: Page, node: Node): void {
     if (when) parts.push(when);
     parts.push(kindLabel(it.kind));
     if (it.size) parts.push(formatBytes(it.size));
+    if (it.editedAt) parts.push(t("edited"));
     return parts.join(" · ");
   }
 
@@ -739,12 +803,17 @@ export function start(page: Page, node: Node): void {
     meta.appendChild(el("span", "", metaText(it)));
     card.appendChild(meta);
 
-    if (it.kind === "text") {
+    if (it.kind === "text" && state.editing === id) {
+      card.appendChild(textEditor(it, id));
+    } else if (it.kind === "text") {
       card.appendChild(el("pre", "body", it.text || ""));
     } else if (it.kind === "image" && it.hasThumb && id) {
       const img = el("img", "shot") as HTMLImageElement;
       img.alt = it.name || t("imageKind");
       img.src = "/api/items/" + id + "/thumb";
+      img.addEventListener("click", function () {
+        openViewer(it, id);
+      });
       card.appendChild(img);
     } else {
       const nameRow = el("p", "fname", it.name || t("fileKind"));
@@ -758,6 +827,14 @@ export function start(page: Page, node: Node): void {
         copyButtonText(it.text || "", copy);
       }, "textbtn");
       row.appendChild(copy);
+    }
+    if (it.kind === "text" && id && state.editing !== id) {
+      row.appendChild(
+        btn(t("edit"), function () {
+          state.editing = id;
+          if (state.view === "board") renderBoard();
+        }, "textbtn")
+      );
     }
     if (id && page.canPreview(it)) row.appendChild(fileLink(t("view"), "/api/items/" + id + "/raw"));
     if (id && it.kind !== "text") row.appendChild(fileLink(t("download"), "/api/items/" + id + "/raw?dl=1"));
@@ -790,6 +867,10 @@ export function start(page: Page, node: Node): void {
         wrap.appendChild(el("p", "hint", t("previewLoading")));
       } else if (state.previewText[id] === null) {
         wrap.appendChild(el("p", "hint", t("previewBinary")));
+      } else if (isMarkdown(it.name, it.mime)) {
+        const doc = el("div", "body previewbody md");
+        doc.appendChild(renderMarkdown(state.previewText[id] as string));
+        wrap.appendChild(doc);
       } else {
         wrap.appendChild(el("pre", "body previewbody", state.previewText[id] as string));
       }
@@ -837,6 +918,156 @@ export function start(page: Page, node: Node): void {
       copyButtonText(text, b);
     }, "textbtn");
     return b;
+  }
+
+  // ---- editing ------------------------------------------------------
+
+  // textEditor replaces the body while a slip is being edited. Saving
+  // sends PATCH; the slip keeps its place and its original time.
+  function textEditor(it: Item, id: string): HTMLElement {
+    const wrap = el("div", "editor");
+    const ta = el("textarea", "editor-input") as HTMLTextAreaElement;
+    ta.value = it.text || "";
+    ta.setAttribute("autocorrect", "off");
+    ta.setAttribute("autocapitalize", "off");
+    ta.spellcheck = false;
+    wrap.appendChild(ta);
+
+    const err = el("p", "err", "");
+    err.hidden = true;
+    wrap.appendChild(err);
+
+    const row = el("div", "row");
+    const cancel = btn(t("cancel"), function () {
+      state.editing = "";
+      if (state.view === "board") renderBoard();
+    }, "textbtn");
+    const save = btn(t("save"), function () {
+      const text = ta.value;
+      if (!text.trim()) {
+        err.hidden = false;
+        err.textContent = t("emptyText");
+        return;
+      }
+      if (byteLength(text) > textCap) {
+        err.hidden = false;
+        err.textContent = t("textTooBig");
+        return;
+      }
+      save.disabled = true;
+      save.textContent = t("sending");
+      api<{ item: Item }>("/api/items/" + id, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text })
+      })
+        .then(function (body) {
+          state.editing = "";
+          state.items = state.items.map(function (x) {
+            return x.id === id ? body.item : x;
+          });
+          if (state.view === "board") renderBoard();
+          say(t("saved"));
+        })
+        .catch(function (e) {
+          if (guard(e)) return;
+          save.disabled = false;
+          save.textContent = t("save");
+          err.hidden = false;
+          err.textContent = errText(e);
+        });
+    }, "seal");
+    row.appendChild(cancel);
+    row.appendChild(save);
+    wrap.appendChild(row);
+
+    ta.addEventListener("keydown", function (e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        save.click();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        cancel.click();
+      }
+    });
+    setTimeout(function () {
+      ta.focus();
+    }, 0);
+    return wrap;
+  }
+
+  // ---- image viewer -------------------------------------------------
+
+  // openViewer shows one picture at full size, with the neighbouring
+  // pictures reachable by button and by arrow key.
+  function openViewer(it: Item, id: string): void {
+    state.viewer = { id: id, name: it.name || t("imageKind") };
+    paintViewer();
+  }
+
+  function imageItems(): Item[] {
+    return state.items.filter(function (x) {
+      return x.kind === "image" && safeID(x.id) !== "";
+    });
+  }
+
+  function viewerStep(step: number): void {
+    const list = imageItems();
+    if (!state.viewer || list.length < 2) return;
+    let at = -1;
+    let i;
+    for (i = 0; i < list.length; i++) {
+      if (list[i].id === state.viewer.id) at = i;
+    }
+    if (at === -1) return;
+    const next = (at + step + list.length) % list.length;
+    state.viewer = { id: list[next].id, name: list[next].name || t("imageKind") };
+    paintViewer();
+  }
+
+  function closeViewer(): void {
+    state.viewer = null;
+    paintViewer();
+  }
+
+  // paintViewer keeps one overlay element in sync with state.viewer.
+  function paintViewer(): void {
+    let layer = document.getElementById("viewer");
+    if (!state.viewer) {
+      if (layer && layer.parentNode) layer.parentNode.removeChild(layer);
+      return;
+    }
+    if (!layer) {
+      layer = el("div", "viewer");
+      layer.id = "viewer";
+      layer.setAttribute("role", "dialog");
+      layer.setAttribute("aria-modal", "true");
+      layer.addEventListener("click", function (e) {
+        if (e.target === layer) closeViewer();
+      });
+      document.body.appendChild(layer);
+    }
+    clear(layer);
+    const id = state.viewer.id;
+    const img = el("img", "viewer-img") as HTMLImageElement;
+    img.alt = state.viewer.name;
+    img.src = "/api/items/" + safeID(id) + "/raw";
+    layer.appendChild(img);
+
+    const bar = el("div", "viewer-bar");
+    const many = imageItems().length > 1;
+    if (many) {
+      bar.appendChild(btn("<", function () { viewerStep(-1); }, "viewer-btn"));
+    }
+    bar.appendChild(el("span", "viewer-name", state.viewer.name));
+    if (many) {
+      bar.appendChild(btn(">", function () { viewerStep(1); }, "viewer-btn"));
+    }
+    const dl = el("a", "viewer-btn", t("download")) as HTMLAnchorElement;
+    dl.href = "/api/items/" + safeID(id) + "/raw?dl=1";
+    bar.appendChild(dl);
+    bar.appendChild(btn(t("close"), closeViewer, "viewer-btn"));
+    layer.appendChild(bar);
   }
 
   // ---- delete and undo ----------------------------------------------
@@ -1005,6 +1236,7 @@ export function start(page: Page, node: Node): void {
   // ---- boot ---------------------------------------------------------
 
   installDragHandlers();
+  installKeys();
   applyChrome();
   paintNav();
   api<Bootstrap>("/api/bootstrap")

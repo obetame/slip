@@ -230,3 +230,106 @@ func openTest(t *testing.T, dir string) *Store {
 	}
 	return st
 }
+
+func TestEditText(t *testing.T) {
+	dir := t.TempDir()
+	st := openTest(t, dir)
+	cur := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	st.SetClock(func() time.Time { return cur })
+
+	first, err := st.AddText("before")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur = cur.Add(time.Minute)
+	second, err := st.AddText("second")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Editing keeps the place in the stack and the original CreatedAt.
+	cur = cur.Add(time.Minute)
+	edited, err := st.EditText(first.ID, "after")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edited.Text != "after" {
+		t.Fatalf("text = %q", edited.Text)
+	}
+	if !edited.CreatedAt.Equal(first.CreatedAt) {
+		t.Fatalf("CreatedAt moved: %v -> %v", first.CreatedAt, edited.CreatedAt)
+	}
+	if edited.EditedAt == nil {
+		t.Fatal("EditedAt not set")
+	}
+	if !edited.EditedAt.Equal(cur) {
+		t.Fatalf("EditedAt = %v, want %v", edited.EditedAt, cur)
+	}
+
+	// The order is unchanged: newest still comes first in List.
+	list, _ := st.List(10, "")
+	if len(list) != 2 || list[0].ID != second.ID || list[1].ID != first.ID {
+		t.Fatalf("order changed after edit: %+v", list)
+	}
+	if list[1].Text != "after" || list[1].EditedAt == nil {
+		t.Fatalf("edited slip not visible in List: %+v", list[1])
+	}
+
+	// The change survives a reopen.
+	reopened := openTest(t, dir)
+	got, err := reopened.Get(first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Text != "after" || got.EditedAt == nil {
+		t.Fatalf("edit not persisted: %+v", got)
+	}
+
+	// Rejections.
+	if _, err := st.EditText(first.ID, "   "); err != ErrEmpty {
+		t.Fatalf("blank: %v", err)
+	}
+	if _, err := st.EditText("0123456789abcdef", "x"); err != ErrNotFound {
+		t.Fatalf("unknown id: %v", err)
+	}
+	st.SetLimits(0, 3, 0)
+	if _, err := st.EditText(first.ID, "too long"); err != ErrTooLarge {
+		t.Fatalf("too long: %v", err)
+	}
+	st.SetLimits(0, 100, 0)
+
+	// A deleted slip cannot be edited.
+	if _, err := st.SoftDelete([]string{first.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EditText(first.ID, "gone"); err != ErrNotFound {
+		t.Fatalf("deleted: %v", err)
+	}
+}
+
+func TestEditOnlyText(t *testing.T) {
+	dir := t.TempDir()
+	st := openTest(t, dir)
+	cur := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	st.SetClock(func() time.Time { return cur })
+
+	tmp := filepath.Join(dir, "incoming", "f")
+	if err := os.WriteFile(tmp, []byte("some bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	it, err := st.AddFile(tmp, "note.txt", "text/plain", int64(len("some bytes")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.EditText(it.ID, "rewrite"); err != ErrNotText {
+		t.Fatalf("file slip edit: %v, want ErrNotText", err)
+	}
+	// The body is untouched.
+	got, err := st.Get(it.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.EditedAt != nil {
+		t.Fatal("file slip got an EditedAt")
+	}
+}

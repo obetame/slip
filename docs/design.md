@@ -122,6 +122,7 @@ There is no inline script, which is why the theme is applied by `/boot.js` rathe
 | GET | `/api/items/{id}/raw` | Signed in. `?dl=1` forces a download. |
 | GET | `/api/items/{id}/thumb` | Signed in, JPEG preview |
 | DELETE | `/api/items/{id}` | Signed in. Soft delete. |
+| PATCH | `/api/items/{id}` | Signed in. JSON `{"text":"..."}`. Text slips only. Keeps `createdAt` and the place in the stack, sets `editedAt`. |
 | POST | `/api/restore` | Signed in. JSON `{"ids":[...]}` inside the undo window. |
 | POST | `/api/clear` | Signed in. Soft delete of every visible slip. |
 

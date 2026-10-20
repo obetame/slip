@@ -14,6 +14,7 @@ export interface Item {
   id: string;
   kind: string;
   createdAt: string;
+  editedAt?: string;
   text?: string;
   name?: string;
   size?: number;

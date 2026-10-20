@@ -212,6 +212,35 @@ func (s *Server) deleteItem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ids": ids, "undoSeconds": 8})
 }
 
+// editItem rewrites the body of a text slip. PATCH rather than PUT: the
+// name, time, and place in the stack all stay, only the text changes.
+func (s *Server) editItem(w http.ResponseWriter, r *http.Request) {
+	if !requireWrite(w, r) || !s.requireAuth(w, r) {
+		return
+	}
+	var body struct {
+		Text string `json:"text"`
+	}
+	if err := readJSON(w, r, &body, int64(store.MaxText)*4+8192); err != nil {
+		if tooLarge(err) {
+			writeErr(w, http.StatusRequestEntityTooLarge, "text_too_large")
+			return
+		}
+		writeJSONErr(w, err)
+		return
+	}
+	it, err := s.store.EditText(r.PathValue("id"), body.Text)
+	if err == store.ErrTooLarge {
+		writeErr(w, http.StatusRequestEntityTooLarge, "text_too_large")
+		return
+	}
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": it.Public()})
+}
+
 func (s *Server) restore(w http.ResponseWriter, r *http.Request) {
 	if !requireWrite(w, r) || !s.requireAuth(w, r) {
 		return
@@ -258,6 +287,8 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusNotFound, "not_found")
 	case err == store.ErrGone:
 		writeErr(w, http.StatusGone, "gone")
+	case err == store.ErrNotText:
+		writeErr(w, http.StatusBadRequest, "not_text")
 	default:
 		writeErr(w, http.StatusInternalServerError, "bad_request")
 	}
