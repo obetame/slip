@@ -2,16 +2,31 @@
 
 Issues and pull requests are welcome in English or Chinese.
 
+## Branches
+
+`main` is the only long-lived branch. It should build and pass the tests.
+
+Do the work on a short-lived branch and open a pull request. A small fix can land on `main` directly. There is no `develop` branch.
+
+A tag `vX.Y.Z` on `main` publishes the binaries. The tag has to match `internal/version.Current`: tag `v0.1.0` means that file says `0.1.0`. Move the constant in the same commit as the change it names, then tag that commit.
+
 ## Tests
 
-Go 1.23 or newer:
+Go 1.23 or newer. [just](https://github.com/casey/just) is optional:
+
+```sh
+just test
+just fmt
+```
+
+The same commands without just:
 
 ```sh
 gofmt -w .
 go test ./...
 ```
 
-CI on GitHub runs the same gofmt check and `go test ./...` on Ubuntu with Go 1.23.
+CI runs the gofmt check and `go test ./...` on Ubuntu with Go 1.23. It runs on a pull request, and again when the result reaches `main`. `GOTOOLCHAIN=local`, so the job does not download a newer Go to satisfy a dependency. A module update that raises the `go` line is a language-version change and should update the docs in the same pull request.
 
 The compatible page is `internal/web/static/legacy.js` plus `legacy.css`. It has to stay readable on iOS 12. Do not use optional chaining, nullish coalescing, arrow functions, template literals, `const`, `let`, `class`, flexbox `gap`, `:has`, `aspect-ratio`, `inset`, `oklch`, or `color-mix` in those files or in the shared `api.js`, `boot.js`, and `tokens.css`. `internal/web/syntax_test.go` checks this.
 

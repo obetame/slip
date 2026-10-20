@@ -1,10 +1,23 @@
 version: 2
 updates:
+  # One grouped pull request per ecosystem, once a month.
+  # An update that raises the go line in go.mod changes the language
+  # version. That needs the same review as any other language change.
   - package-ecosystem: gomod
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    open-pull-requests-limit: 1
+    groups:
+      go:
+        patterns:
+          - "*"
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    open-pull-requests-limit: 1
+    groups:
+      actions:
+        patterns:
+          - "*"

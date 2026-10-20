@@ -7,4 +7,4 @@ test:
 	go test ./...
 
 build:
-	go build -ldflags="-s -w" -o slip ./cmd/slip
+	go build -trimpath -ldflags="-s -w" -o slip ./cmd/slip

@@ -6,15 +6,45 @@ Slip is a board for text, pictures, and files on a home network. One computer ru
 
 New slips sit on top. Nothing syncs in the background, and nothing disappears until someone deletes it.
 
-## Run
+## Install
+
+### Download a release
+
+Open the [latest release](https://github.com/obetame/slip/releases/latest). Pick the archive for this computer:
+
+| System              | Archive                              |
+| ------------------- | ------------------------------------ |
+| Linux x86-64        | `slip_<version>_linux_amd64.tar.gz`  |
+| Linux arm64         | `slip_<version>_linux_arm64.tar.gz`  |
+| macOS Apple silicon | `slip_<version>_darwin_arm64.tar.gz` |
+| macOS Intel         | `slip_<version>_darwin_amd64.tar.gz` |
+| Windows x86-64      | `slip_<version>_windows_amd64.zip`   |
+| Windows arm64       | `slip_<version>_windows_arm64.zip`   |
+
+`SHA256SUMS` in the same release lists every archive. On macOS or Linux, unpack it and put `slip` somewhere on `PATH`:
+
+```sh
+tar -xzf slip_*_darwin_arm64.tar.gz
+chmod +x slip
+sudo mv slip /usr/local/bin/slip
+```
+
+On Windows, unzip `slip.exe` and run it from a command prompt. Windows may warn that the publisher is unknown. The file is not signed with a paid certificate.
+
+### Install with Go
 
 Go 1.23 or newer:
 
 ```sh
-git clone https://github.com/obetame/slip.git
-cd slip
-go build -ldflags="-s -w" -o slip ./cmd/slip
-./slip
+go install github.com/obetame/slip/cmd/slip@v0.1.0
+```
+
+The binary is placed in `$(go env GOPATH)/bin`. That directory has to be on `PATH`.
+
+## Run
+
+```sh
+slip
 ```
 
 The terminal prints a local URL. When Slip listens on the local network, it also prints the addresses other devices can open, and a QR code for the first of them. Binding `127.0.0.1`, `localhost`, or `::1` prints only the local URL. On a first run, the Mac also opens the page so you can choose a household passphrase of at least 6 characters. Do not reuse a passphrase from email or a bank. The page is plain HTTP on the local network.
@@ -23,13 +53,13 @@ Other devices join the same Wi-Fi, open the LAN address, and enter that passphra
 
 ## Flags
 
-| Flag | Meaning |
-| --- | --- |
-| `--port` | Port to bind. The default is 8787, or the port saved from last time. An explicit port is not moved if it is busy. |
-| `--data` | Directory for slips and the passphrase hash. |
-| `--host` | Bind address. The default is every interface. `127.0.0.1` keeps it on this computer. |
-| `--no-open` | Do not open a browser on first run. |
-| `--version` | Print the version and exit. |
+| Flag        | Meaning                                                                                                           |
+| ----------- | ----------------------------------------------------------------------------------------------------------------- |
+| `--port`    | Port to bind. The default is 8787, or the port saved from last time. An explicit port is not moved if it is busy. |
+| `--data`    | Directory for slips and the passphrase hash.                                                                      |
+| `--host`    | Bind address. The default is every interface. `127.0.0.1` keeps it on this computer.                              |
+| `--no-open` | Do not open a browser on first run.                                                                               |
+| `--version` | Print the version and exit.                                                                                       |
 
 Environment variables: `SLIP_PORT`, `SLIP_DATA`, and `SLIP_NO_OPEN=1`.
 
@@ -37,12 +67,12 @@ The data directory defaults to `~/Library/Application Support/slip` on macOS. Fi
 
 ## Limits
 
-| Limit | Value |
-| --- | --- |
-| One file | 50 MB |
-| One text slip | 200 KB |
-| Data directory | 5 GB |
-| Passphrase | 6 to 200 characters, stored only as an Argon2id hash |
+| Limit          | Value                                                |
+| -------------- | ---------------------------------------------------- |
+| One file       | 50 MB                                                |
+| One text slip  | 200 KB                                               |
+| Data directory | 5 GB                                                 |
+| Passphrase     | 6 to 200 characters, stored only as an Argon2id hash |
 
 Pictures can be viewed and downloaded. Other files are downloaded. PDF files can also be viewed. Text stays selectable, and the copy button copies the whole slip.
 
@@ -50,14 +80,37 @@ Pictures can be viewed and downloaded. Other files are downloaded. PDF files can
 
 iPad mini 2, and other devices on iOS 12, get a simpler page with the same actions. Open `/?ui=legacy` to force it, or `/?ui=modern` to leave it. The choice is remembered on that browser.
 
-## Development
+## Develop
+
+Clone the repository. [just](https://github.com/casey/just) runs the common commands. `make test` and `make build` do the same two jobs without just.
 
 ```sh
-make test
-make build
+git clone https://github.com/obetame/slip.git
+cd slip
+just test
+just dev-local
 ```
 
-`make test` runs `go test ./...`. The module stays on Go 1.23 so the tests match CI.
+`just dev-local` listens only on this computer and keeps its slips in a temporary directory. It does not open a browser and it does not use the household data directory. The terminal prints the URL, which is `http://127.0.0.1:8787` unless that port is already taken. Delete the temporary directory to choose the passphrase again.
+
+| Command              | What it does                                 |
+| -------------------- | -------------------------------------------- |
+| `just test`          | Run `go test ./...`.                         |
+| `just build`         | Write `./slip` for this machine.             |
+| `just dev --no-open` | Run from source. Extra words are slip flags. |
+| `just dev-local`     | Local trial, temporary data directory.       |
+| `just dist`          | Write release archives into `./dist`.        |
+| `just fmt`           | Run `gofmt`.                                 |
+| `just clean`         | Remove `./slip` and `./dist`.                |
+
+Without just:
+
+```sh
+go test ./...
+go run ./cmd/slip --host 127.0.0.1 --no-open
+```
+
+GitHub runs the tests on a pull request, and once more when that work reaches `main`. A tag `vX.Y.Z` on `main` builds the release. How branches and tags work is in [Contributing](CONTRIBUTING.md).
 
 ## More
 

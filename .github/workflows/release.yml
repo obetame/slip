@@ -1,0 +1,35 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+      - name: build archives
+        env:
+          SLIP_RELEASE_TAG: ${{ github.ref_name }}
+        run: bash scripts/dist.sh
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "slip ${GITHUB_REF_NAME#v}" \
+            --notes "$(printf '%s\n\n%s\n' \
+              'Archives for Linux, macOS, and Windows. SHA256SUMS lists each file. The tag matches the version printed by slip --version.' \
+              'Linux、macOS 和 Windows 的压缩包。SHA256SUMS 是每个文件的校验值。标签和 slip --version 打印的版本一致。')" \
+            dist/*

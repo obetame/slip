@@ -39,9 +39,11 @@ iPad mini 2 最高是 iOS 12.5.7。它的 Safari 不拿完整页面。服务看�
 
 一个 Go 二进制。标准库提供 HTTP，并把页面嵌进去。Argon2id 来自 `golang.org/x/crypto`。缩略图在进程里解码，缩放用 `golang.org/x/image/draw`。macOS 上先试 `sips`，这样 HEIC 可以有预览，又不用链上 libheif。二维码用 `rsc.io/qr`，页面上是 SVG，终端里是方块字符。没有 cgo，没有 SQLite，没有 Docker。
 
-模块路径是 `github.com/obetame/slip`，语言版本是 Go 1.23。`GET /{$}` 需要 Go 1.22 或更新。CI 使用 Go 1.23。
+模块路径是 `github.com/obetame/slip`，语言版本是 Go 1.23。`GET /{$}` 需要 Go 1.22 或更新。CI 使用 Go 1.23，并设置 `GOTOOLCHAIN=local`。依赖如果需要更新的 Go，检查会失败，而不是再去下载一套工具链。
 
 0.1.0 在 macOS arm64 上的剥离构建（`go build -ldflags="-s -w"`，用 Go 1.26.1 编译）是 6,793,970 字节，大约 6.5 MiB。这个数字会随 Go 版本和目标系统变化。以后的 Homebrew 包会只带一种架构。
+
+在 `main` 上打 `vX.Y.Z` 标签会发布这一版。标签必须是 `v` 加上 `version.Current`。GitHub Actions 在 Ubuntu 上用 Go 1.26 构建压缩包，参数是 `CGO_ENABLED=0`、`-trimpath` 和 `-ldflags="-s -w"`，目标是 Linux、macOS 和 Windows 的 amd64 与 arm64。一起发布的还有 `SHA256SUMS`。上面的字节数是那次本机构建，不是这些压缩包。
 
 生产参数的 Argon2id 在计算口令时会用到 64 MiB 的工作内存。那不是进程闲着时的体积。
 
