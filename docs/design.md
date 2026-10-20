@@ -43,7 +43,15 @@ The module is `github.com/obetame/slip` and the language version is Go 1.27. `GE
 
 A stripped macOS arm64 build (`go build -ldflags="-s -w"`, compiled with Go 1.27.2) is 7,296,994 bytes, about 7.0 MiB. The size moves with the Go release, the dependencies, and the target operating system. A later Homebrew bottle would ship one architecture.
 
-A tag `vX.Y.Z` on `main` publishes the release. The tag has to be `v` plus `version.Current`. GitHub Actions builds the archives on Ubuntu with Go 1.27, `CGO_ENABLED=0`, `-trimpath`, and `-ldflags="-s -w"`, for Linux, macOS, and Windows, on amd64 and arm64. `SHA256SUMS` is published with them. The byte count above is that local binary, not one of the archives.
+A tag `vX.Y.Z` on `main` publishes the release. The tag has to be `v` plus `version.Current`.
+
+Two runners build it. Linux and Windows archives come from Ubuntu with Go 1.27, `CGO_ENABLED=0`, `-trimpath`, and `-ldflags="-s -w"`. The macOS archive comes from macOS, because signing and notarizing need tools that only ship there: `scripts/dist-darwin.sh` links one universal binary with `lipo`, signs it with a Developer ID certificate and the hardened runtime, submits it to `notarytool`, and staples the ticket to the archive.
+
+The certificate and the notarization credentials come from repository secrets, which are imported into a throwaway keychain on the runner. `security set-key-partition-list` pre-authorizes `codesign` there, since a runner has nobody to answer the access prompt. A third job collects both sets of archives, recomputes `SHA256SUMS` over the final files, and publishes.
+
+Without the signing secrets the macOS job still produces an unsigned archive, so a fork can build; it just will not pass Gatekeeper, and the job says so.
+
+`SHA256SUMS` is published with the archives. The byte count above is that local binary, not one of the archives.
 
 Argon2id at the production cost uses a 64 MiB working set while a passphrase is hashed. That memory is not the idle size of the process.
 

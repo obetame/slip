@@ -8,8 +8,12 @@ on:
 permissions:
   contents: write
 
+# Two builders because notarization needs macOS and its tools only ship
+# there. Linux and Windows archives stay on the cheaper Ubuntu runner; the
+# macOS archive is built, signed, and notarized on macOS so Gatekeeper does
+# not stop the first run on another Mac.
 jobs:
-  release:
+  unix:
     runs-on: ubuntu-latest
     env:
       GOTOOLCHAIN: local
@@ -18,10 +22,117 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.27"
-      - name: build archives
+      - name: build linux and windows archives
         env:
           SLIP_RELEASE_TAG: ${{ github.ref_name }}
-        run: bash scripts/dist.sh
+        # dist.sh builds all six targets; the macOS ones are built again and
+        # better on the macOS runner, so only these four are kept.
+        run: |
+          bash scripts/dist.sh
+          rm -f dist/*darwin*.tar.gz
+          ( cd dist && shasum -a 256 *.tar.gz *.zip | LC_ALL=C sort -k2 > SHA256SUMS )
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archives-unix
+          if-no-files-found: error
+          path: dist/*
+
+  macos:
+    runs-on: macos-latest
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27"
+
+      # The certificate arrives as base64 in a secret. Importing it into a
+      # throwaway keychain keeps the runner clean, and the partition list
+      # pre-authorizes codesign so it never waits on a dialog.
+      - name: import signing certificate
+        env:
+          CERT_P12: ${{ secrets.MAC_CSC_LINK }}
+          CERT_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CERT_P12" ]; then
+            echo "MAC_CSC_LINK is not set; the macOS archive will be unsigned" >&2
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/slip-signing.keychain-db"
+          password=$(openssl rand -base64 32)
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" \
+            -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: build, sign, and notarize
+        env:
+          SLIP_RELEASE_TAG: ${{ github.ref_name }}
+          SLIP_APPLE_ID: ${{ secrets.APPLE_ID }}
+          SLIP_APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          SLIP_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          # A fork without the signing secrets can still produce an archive;
+          # it just will not be notarized. The real repository always has an
+          # identity here.
+          if security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
+            id=$(security find-identity -v -p codesigning \
+              | grep "Developer ID Application" | head -1 | sed -E 's/.*\) ([0-9A-F]{40}) .*/\1/')
+            echo "signing with $id"
+            SLIP_SIGN_IDENTITY="$id" bash scripts/dist-darwin.sh
+          else
+            echo "no Developer ID Application certificate; building unsigned" >&2
+            SLIP_SIGN_IDENTITY=skipped SLIP_SKIP_SIGN=1 bash scripts/dist-darwin.sh
+          fi
+
+      - name: verify signature and Gatekeeper
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^const Current = "\([^"]*\)"$/\1/p' internal/version/version.go)
+          archive="dist/slip_${version}_darwin_universal.tar.gz"
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          if codesign -dv "$RUNNER_TEMP/slip" >/dev/null 2>&1; then
+            codesign --verify --strict --verbose=2 "$RUNNER_TEMP/slip"
+          else
+            echo "archive is unsigned; skipping the Gatekeeper check" >&2
+            exit 0
+          fi
+          # spctl is the real test: it fails for a signed but un-notarized
+          # binary, which is exactly what this job exists to prevent.
+          spctl -a -vvv -t install "$RUNNER_TEMP/slip" || {
+            echo "Gatekeeper rejects the archive; check the notarization secrets" >&2
+            exit 1
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archives-macos
+          if-no-files-found: error
+          path: dist/*
+
+  publish:
+    needs: [unix, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          rm -f SHA256SUMS
+          sha256sum *.tar.gz *.zip | LC_ALL=C sort -k2 > SHA256SUMS
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -30,6 +141,6 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "slip ${GITHUB_REF_NAME#v}" \
             --notes "$(printf '%s\n\n%s\n' \
-              'Archives for Linux, macOS, and Windows. SHA256SUMS lists each file. The tag matches the version printed by slip --version.' \
-              'Linux、macOS 和 Windows 的压缩包。SHA256SUMS 是每个文件的校验值。标签和 slip --version 打印的版本一致。')" \
+              'Archives for Linux, macOS, and Windows. SHA256SUMS lists each file. The tag matches the version printed by slip --version. The macOS archive is signed and notarized, so it opens without a Gatekeeper prompt.' \
+              'Linux、macOS 和 Windows 的压缩包。SHA256SUMS 是每个文件的校验值。标签和 slip --version 打印的版本一致。macOS 的包已签名并公证，打开时不会出现拦截提示。')" \
             dist/*
