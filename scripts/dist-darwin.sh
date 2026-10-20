@@ -123,20 +123,25 @@ if [ "$can_notarize" = "1" ]; then
   rm -f "$submit_zip"
 
   echo "staple"
-  # Apple indexes the ticket a moment after notarization returns, so the
-  # first lookup can miss it. Retry for a few minutes before giving up: an
-  # unstapled binary still runs, but only while it can reach Apple.
-  attempts=0
-  until xcrun stapler staple "$bin"; do
-    attempts=$((attempts + 1))
-    if [ "$attempts" -ge 12 ]; then
-      echo "slip: no notarization ticket could be stapled after $attempts tries" >&2
-      echo "slip: the binary is signed and notarized but needs a network check to run" >&2
-      exit 1
-    fi
-    sleep 15
-  done
-  xcrun stapler validate "$bin"
+  # Notarization is what Gatekeeper needs; stapling only saves the first-run
+  # network lookup, so it is best effort here. This is a bare Mach-O rather
+  # than a bundle, and stapler would not attach a ticket to one: Apple
+  # accepted the upload and every retry still answered "The staple and
+  # validate action failed! Error 73" for three minutes. The archive is
+  # notarized either way, and Gatekeeper reads the ticket from Apple the first
+  # time the binary runs, which is how command line tools normally ship.
+  if xcrun stapler staple "$bin"; then
+    xcrun stapler validate "$bin"
+  else
+    echo "slip: no ticket stapled; Gatekeeper will ask Apple on first run" >&2
+  fi
+
+  echo "gatekeeper"
+  # What someone actually hits when they run the download. This is the online
+  # lookup, so a miss is reported rather than fatal: the upload above was
+  # already accepted.
+  spctl --assess --verbose=4 --type install "$bin" \
+    || echo "slip: no online ticket yet; it usually appears within minutes" >&2
 else
   echo "skip notarization: no credentials"
 fi
