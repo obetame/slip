@@ -243,13 +243,37 @@ export function start(page: Page, node: Node): void {
 
   // ---- errors -------------------------------------------------------
 
+  // noticeTimer clears the bottom notice so it does not sit there forever.
+  let noticeTimer = 0;
+
+  // showErr reports a failure where the person is looking. The inline error
+  // line under the composer is only reachable when the composer is what
+  // failed; a delete or an edit fails on a card further down the page, so the
+  // message also goes to the notice at the bottom of the viewport.
   function showErr(err: any): void {
     const text = errText(err);
     if (state.errEl) {
       state.errEl.hidden = false;
       state.errEl.textContent = text;
     }
+    showNotice(text);
     say(text);
+  }
+
+  // showNotice puts one line at the bottom, reusing the undo bar's place.
+  // It never replaces an undo that is still offering to take something back.
+  function showNotice(text: string): void {
+    if (!node.undo.hidden) {
+      say(text);
+      return;
+    }
+    clear(node.undo);
+    node.undo.appendChild(el("span", "", text));
+    node.undo.hidden = false;
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(function () {
+      node.undo.hidden = true;
+    }, 4000);
   }
 
   function loseAuth(): void {

@@ -853,13 +853,28 @@
         node.nav.appendChild(btn(t("settings"), openSettings));
       }
     }
+    var noticeTimer = 0;
     function showErr(err) {
       var text = errText(err);
       if (state.errEl) {
         state.errEl.hidden = false;
         state.errEl.textContent = text;
       }
+      showNotice(text);
       say(text);
+    }
+    function showNotice(text) {
+      if (!node.undo.hidden) {
+        say(text);
+        return;
+      }
+      clear(node.undo);
+      node.undo.appendChild(el("span", "", text));
+      node.undo.hidden = false;
+      clearTimeout(noticeTimer);
+      noticeTimer = setTimeout(function() {
+        node.undo.hidden = true;
+      }, 4e3);
     }
     function loseAuth() {
       state.viewer = null;
