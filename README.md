@@ -12,22 +12,25 @@ New slips sit on top. Nothing syncs in the background, and nothing disappears un
 
 Open the [latest release](https://github.com/obetame/slip/releases/latest). Pick the archive for this computer:
 
-| System              | Archive                              |
-| ------------------- | ------------------------------------ |
-| Linux x86-64        | `slip_<version>_linux_amd64.tar.gz`  |
-| Linux arm64         | `slip_<version>_linux_arm64.tar.gz`  |
-| macOS Apple silicon | `slip_<version>_darwin_arm64.tar.gz` |
-| macOS Intel         | `slip_<version>_darwin_amd64.tar.gz` |
-| Windows x86-64      | `slip_<version>_windows_amd64.zip`   |
-| Windows arm64       | `slip_<version>_windows_arm64.zip`   |
+| System              | Archive                                  |
+| ------------------- | ---------------------------------------- |
+| Linux x86-64        | `slip_<version>_linux_amd64.tar.gz`      |
+| Linux arm64         | `slip_<version>_linux_arm64.tar.gz`      |
+| macOS universal     | `slip_<version>_darwin_universal.tar.gz` |
+| Windows x86-64      | `slip_<version>_windows_amd64.zip`       |
+| Windows arm64       | `slip_<version>_windows_arm64.zip`       |
+
+The macOS archive holds one universal binary, so it runs on both Apple silicon and Intel.
 
 `SHA256SUMS` in the same release lists every archive. On macOS or Linux, unpack it and put `slip` somewhere on `PATH`:
 
 ```sh
-tar -xzf slip_*_darwin_arm64.tar.gz
+tar -xzf slip_*_darwin_universal.tar.gz
 chmod +x slip
 sudo mv slip /usr/local/bin/slip
 ```
+
+The macOS archive is signed with a Developer ID and notarized by Apple, so it opens without a Gatekeeper prompt and needs no extra step.
 
 On Windows, unzip `slip.exe` and run it from a command prompt. Windows may warn that the publisher is unknown. The file is not signed with a paid certificate.
 

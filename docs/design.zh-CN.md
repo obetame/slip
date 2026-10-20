@@ -43,7 +43,15 @@ iPad mini 2 最高是 iOS 12.5.7。它的 Safari 不拿完整页面。服务看�
 
 macOS arm64 上的剥离构建（`go build -ldflags="-s -w"`，用 Go 1.27.2 编译）是 7,296,994 字节，大约 7.0 MiB。这个数字会随 Go 版本、依赖和目标系统变化。以后的 Homebrew 包会只带一种架构。
 
-在 `main` 上打 `vX.Y.Z` 标签会发布这一版。标签必须是 `v` 加上 `version.Current`。GitHub Actions 在 Ubuntu 上用 Go 1.27 构建压缩包，参数是 `CGO_ENABLED=0`、`-trimpath` 和 `-ldflags="-s -w"`，目标是 Linux、macOS 和 Windows 的 amd64 与 arm64。一起发布的还有 `SHA256SUMS`。上面的字节数是那次本机构建，不是这些压缩包。
+在 `main` 上打 `vX.Y.Z` 标签会发布这一版。标签必须是 `v` 加上 `version.Current`。
+
+由两个 runner 构建。Linux 和 Windows 的包在 Ubuntu 上用 Go 1.27 构建，参数是 `CGO_ENABLED=0`、`-trimpath` 和 `-ldflags="-s -w"`。macOS 的包在 macOS 上构建，因为签名和公证要用的工具只在那边有：`scripts/dist-darwin.sh` 用 `lipo` 合成一个通用二进制，用 Developer ID 证书加硬化运行时签名，交给 `notarytool` 公证，再把票据订到压缩包上。
+
+证书和公证凭据来自仓库密钥，在 runner 上导入一个临时钥匙串。`security set-key-partition-list` 会预先授权 `codesign`，因为 runner 上没有人能应答访问确认框。第三个任务收齐两套包，对最终文件重新计算 `SHA256SUMS`，然后发布。
+
+没有签名密钥时，macOS 任务仍然产出一个未签名的包，这样 fork 也能构建；只是过不了 Gatekeeper，任务会明说这一点。
+
+一起发布的还有 `SHA256SUMS`。上面的字节数是那次本机构建，不是这些压缩包。
 
 生产参数的 Argon2id 在计算口令时会用到 64 MiB 的工作内存。那不是进程闲着时的体积。
 

@@ -16,18 +16,21 @@
 | --- | --- |
 | Linux x86-64 | `slip_<version>_linux_amd64.tar.gz` |
 | Linux arm64 | `slip_<version>_linux_arm64.tar.gz` |
-| macOS Apple 芯片 | `slip_<version>_darwin_arm64.tar.gz` |
-| macOS Intel | `slip_<version>_darwin_amd64.tar.gz` |
+| macOS 通用 | `slip_<version>_darwin_universal.tar.gz` |
 | Windows x86-64 | `slip_<version>_windows_amd64.zip` |
 | Windows arm64 | `slip_<version>_windows_arm64.zip` |
+
+macOS 的包里是一个通用二进制，Apple 芯片和 Intel 都能跑。
 
 同一次发布里的 `SHA256SUMS` 列出每个压缩包的校验值。在 macOS 或 Linux 上解压后，把 `slip` 放到 `PATH` 里：
 
 ```sh
-tar -xzf slip_*_darwin_arm64.tar.gz
+tar -xzf slip_*_darwin_universal.tar.gz
 chmod +x slip
 sudo mv slip /usr/local/bin/slip
 ```
+
+macOS 的包用 Developer ID 签名并经过 Apple 公证，打开时不会出现拦截提示，也不需要额外步骤。
 
 在 Windows 上解压出 `slip.exe`，从命令提示符运行。Windows 可能会提示发布者未知。这个文件没有用付费证书签名。
 
