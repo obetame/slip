@@ -39,6 +39,9 @@ jobs:
 
   macos:
     runs-on: macos-latest
+    # The signing and notarization credentials live on this environment,
+    # not on the repository. A job without this line reads empty secrets.
+    environment: desktop-production
     env:
       GOTOOLCHAIN: local
     steps:
@@ -57,8 +60,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$CERT_P12" ]; then
-            echo "MAC_CSC_LINK is not set; the macOS archive will be unsigned" >&2
-            exit 0
+            echo "MAC_CSC_LINK is empty. Check that the job declares" >&2
+            echo "environment: desktop-production and that the secret exists there." >&2
+            exit 1
           fi
           keychain="$RUNNER_TEMP/slip-signing.keychain-db"
           password=$(openssl rand -base64 32)
@@ -81,18 +85,19 @@ jobs:
           SLIP_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          # A fork without the signing secrets can still produce an archive;
-          # it just will not be notarized. The real repository always has an
-          # identity here.
-          if security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
-            id=$(security find-identity -v -p codesigning \
-              | grep "Developer ID Application" | head -1 | sed -E 's/.*\) ([0-9A-F]{40}) .*/\1/')
-            echo "signing with $id"
-            SLIP_SIGN_IDENTITY="$id" bash scripts/dist-darwin.sh
-          else
-            echo "no Developer ID Application certificate; building unsigned" >&2
-            SLIP_SIGN_IDENTITY=skipped SLIP_SKIP_SIGN=1 bash scripts/dist-darwin.sh
+          # Never fall through to an unsigned archive here. A release that
+          # cannot be signed is a broken release, and failing loudly is the
+          # only way the next person finds out why.
+          if ! security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
+            echo "the imported keychain has no Developer ID Application identity" >&2
+            echo "the p12 must contain the certificate AND its private key" >&2
+            security find-identity -v -p codesigning >&2 || true
+            exit 1
           fi
+          id=$(security find-identity -v -p codesigning \
+            | grep "Developer ID Application" | head -1 | sed -E 's/.*\) ([0-9A-F]{40}) .*/\1/')
+          echo "signing with $id"
+          SLIP_SIGN_IDENTITY="$id" bash scripts/dist-darwin.sh
 
       - name: verify signature and Gatekeeper
         run: |
@@ -100,12 +105,7 @@ jobs:
           version=$(sed -n 's/^const Current = "\([^"]*\)"$/\1/p' internal/version/version.go)
           archive="dist/slip_${version}_darwin_universal.tar.gz"
           tar -xzf "$archive" -C "$RUNNER_TEMP"
-          if codesign -dv "$RUNNER_TEMP/slip" >/dev/null 2>&1; then
-            codesign --verify --strict --verbose=2 "$RUNNER_TEMP/slip"
-          else
-            echo "archive is unsigned; skipping the Gatekeeper check" >&2
-            exit 0
-          fi
+          codesign --verify --strict --verbose=2 "$RUNNER_TEMP/slip"
           # spctl is the real test: it fails for a signed but un-notarized
           # binary, which is exactly what this job exists to prevent.
           spctl -a -vvv -t install "$RUNNER_TEMP/slip" || {
