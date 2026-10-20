@@ -137,7 +137,13 @@ Content-Security-Policy: default-src 'self'; img-src 'self' blob:; style-src 'se
 
 书写区在最上面。最新的一张纸条左侧有 3 px 的印。文字用按钮提交，也可以用 Command/Control+Enter。Enter 是换行。拖入文件、粘贴图片或点添加文件会立刻上传，每批最多 8 个。没有图标字体，没有库存照片。动效只有加载时的一道光，`prefers-reduced-motion` 会把它关掉。
 
-文案在 `internal/web/static/api.js`。服务不负责翻译。
+文案在 `internal/web/src/i18n.ts`。服务不负责翻译。
+
+浏览器端只写一份。`internal/web/src/` 是 TypeScript，两个页面加载同一个控制器 `core.js`：状态机、请求和结构。页面只提供不一样的地方，通过那个很小的 `Page` 接口：状态行怎么说、查看是否开新标签页、一批文件怎么上传、文本附件能不能就地读。拆分之前，两个页面带着 650 行同样的代码，一处修复要么做两遍，要么只在一份里活着。
+
+`tooling/` 负责构建。`tsc` 先做类型检查并降级到 ES5，`esbuild` 再把每个入口打成自己的 IIFE。降级交给 tsc，是因为 esbuild 没法把 `const`、`let` 和 `class` 变成 ES5；TypeScript 固定 5.9，是因为 TypeScript 7 去掉了 ES5 目标。构建拒绝产出任何带现代语法的文件。四个产物提交在 `internal/web/static/`，所以 `go build` 从不需要 Node；CI 会重新构建，和已提交的不一样就失败。
+
+源码可以用现代语法。不能用的是那台 iPad 没有的运行时：不用 `AbortController`，不用 `Promise.finally`，不用 `globalThis`，也不对非数组的可迭代对象用 `for...of`。`downlevelIteration` 保持关闭，这样这类错误是编译错误，而不是往每个包里塞几个辅助函数。CSS 没有编译器管，所以 `css_compat_test.go` 扫描 `tokens.css` 和 `legacy.css`，找出 iOS 12 会忽略的属性和函数。
 
 ## 威胁模型
 

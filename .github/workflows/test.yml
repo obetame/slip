@@ -24,5 +24,19 @@ jobs:
           go-version: "1.27"
       - name: gofmt
         run: test -z "$(gofmt -l .)"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: web build tooling
+        run: npm ci --prefix tooling
+      - name: web bundles are up to date
+        # The .js under internal/web/static are generated and committed so that
+        # go build needs no Node. Rebuilding here proves they match the sources.
+        run: |
+          npm run build --prefix tooling
+          git diff --exit-code -- internal/web/static
       - name: test
         run: go test ./...
+      - name: browser client
+        # jsdom against a real server: rendering, search, preview, drop.
+        run: bash scripts/browser-test.sh

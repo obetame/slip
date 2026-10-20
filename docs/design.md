@@ -137,7 +137,13 @@ Paper `#f3efe6`, sheet `#faf7f2`, ink `#1c1915`, muted `#5e584e`, line `#ddd4c6`
 
 The composer is at the top. The newest slip has a 3 px seal inset. Text is submitted with the button or with Command/Control+Enter. Enter is a newline. Dragging a file, pasting an image, or using the file button uploads immediately, in batches of 8. There is no icon font and no stock photography. Motion is a loading sheen, and `prefers-reduced-motion` turns it off.
 
-The strings live in `internal/web/static/api.js`. The server does not translate.
+The strings live in `internal/web/src/i18n.ts`. The server does not translate.
+
+The browser client is written once. `internal/web/src/` holds TypeScript, and both pages load the same controller from `core.js`: the state machine, the calls, and the markup. A page supplies only what differs, through the small `Page` interface: how a status line is announced, whether View opens a tab, how a batch uploads, and whether a text attachment can be read in place. Before this split the two pages carried 650 lines of the same code, and a fix had to be made twice or it silently survived only in one copy.
+
+`tooling/` builds it. `tsc` type-checks the sources and lowers them to ES5, then `esbuild` bundles each entry into its own IIFE. tsc does the lowering because esbuild cannot turn `const`, `let`, or `class` into ES5, and TypeScript 5.9 is pinned because TypeScript 7 removed the ES5 target. The build refuses to emit anything containing modern syntax. The four bundles are committed under `internal/web/static/` so `go build` never needs Node, and CI rebuilds them and fails if the result differs from what is committed.
+
+The sources may use modern syntax. What they may not use is a runtime the iPad lacks: no `AbortController`, no `Promise.finally`, no `globalThis`, and no `for...of` over a non-array iterable. `downlevelIteration` stays off so that mistake is a compile error rather than a handful of helpers copied into every bundle. CSS is not checked by a compiler, so `css_compat_test.go` scans `tokens.css` and `legacy.css` for properties and functions that iOS 12 ignores.
 
 ## Threat model
 

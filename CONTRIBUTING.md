@@ -28,7 +28,25 @@ go test ./...
 
 CI runs the gofmt check and `go test ./...` on Ubuntu with Go 1.27. It runs on a pull request, and again when the result reaches `main`. `GOTOOLCHAIN=local`, so the job does not download a newer Go to satisfy a dependency. A module update that raises the `go` line is a language-version change and should update the docs, the CI version, and the minimum version in `README.md` in the same pull request.
 
-The compatible page is `internal/web/static/legacy.js` plus `legacy.css`. It has to stay readable on iOS 12. Do not use optional chaining, nullish coalescing, arrow functions, template literals, `const`, `let`, `class`, flexbox `gap`, `:has`, `aspect-ratio`, `inset`, `oklch`, or `color-mix` in those files or in the shared `api.js`, `boot.js`, and `tokens.css`. `internal/web/syntax_test.go` checks this.
+## The browser client
+
+The sources are TypeScript in `internal/web/src/`. Node 20 or newer builds them:
+
+```sh
+cd tooling
+npm ci
+npm run build
+```
+
+`npm run build` type-checks, lowers the sources to ES5 with `tsc`, and bundles `core.ts`, `app.ts`, `legacy.ts`, and `boot.ts` into `internal/web/static/*.js` with `esbuild`. Those four files are committed, so `go build` never needs Node, and CI rebuilds them and fails if the result differs from what is committed. Rebuild before you commit a frontend change.
+
+Both pages run the same controller in `board.ts`. A change to behavior belongs there, not in `app.ts` or `legacy.ts`. Those two only implement the `Page` interface in `types.ts`, which is what actually differs between the modern page and the iOS 12 page: status output, the drag overlay, the View target, and reading a text attachment in place.
+
+TypeScript is allowed to use modern syntax; the compiler is what makes the output ES5. What the sources must not use is a runtime the iPad lacks: no `AbortController`, no `Promise.finally`, no `globalThis`, no `String.prototype.replaceAll`, and no `for...of` over a `Map`, `Set`, or generator. `downlevelIteration` is off so that last one is a compile error.
+
+CSS has no compiler, so `internal/web/css_compat_test.go` scans `tokens.css` and `legacy.css` for properties and functions iOS 12 ignores, including `gap`, `:has`, `aspect-ratio`, `inset`, `oklch`, and `color-mix`. Do not use those in either sheet; `app.css` is only loaded by the modern page.
+
+The strings for both languages are in `internal/web/src/i18n.ts`. `internal/web/text_test.go` checks that the two tables have the same keys.
 
 User-facing text should not use an em dash.
 

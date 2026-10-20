@@ -65,7 +65,7 @@ func New(st *store.Store, cfg *config.Config, book *session.Book, argon auth.Par
 	mux.HandleFunc("GET /tokens.css", s.asset("tokens.css", "text/css; charset=utf-8"))
 	mux.HandleFunc("GET /app.css", s.asset("app.css", "text/css; charset=utf-8"))
 	mux.HandleFunc("GET /app.js", s.asset("app.js", "text/javascript; charset=utf-8"))
-	mux.HandleFunc("GET /api.js", s.asset("api.js", "text/javascript; charset=utf-8"))
+	mux.HandleFunc("GET /core.js", s.asset("core.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("GET /boot.js", s.asset("boot.js", "text/javascript; charset=utf-8"))
 	mux.HandleFunc("GET /legacy.css", s.asset("legacy.css", "text/css; charset=utf-8"))
 	mux.HandleFunc("GET /legacy.js", s.asset("legacy.js", "text/javascript; charset=utf-8"))

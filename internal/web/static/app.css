@@ -264,3 +264,77 @@ textarea {
   0% { background-position: 100% 0; }
   100% { background-position: -100% 0; }
 }
+
+/* Search, text preview, and the drop overlay. These load only on the
+   modern page, so the iOS 12 rules in legacy.css do not apply here. */
+
+.searchbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+input.search {
+  flex: 1;
+  min-height: 44px;
+  padding: 0 12px;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font: inherit;
+  font-size: 16px;
+  -webkit-appearance: none;
+}
+
+input.search:focus {
+  outline: none;
+  border-color: var(--seal);
+}
+
+.preview {
+  margin-top: 10px;
+}
+
+.previewbtn {
+  padding: 0;
+}
+
+.previewbody {
+  max-height: 320px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dropzone {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(28, 25, 20, 0.06);
+  border: 3px dashed var(--seal);
+}
+
+:root[data-theme="dark"] .dropzone {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.dropzone-label {
+  padding: 12px 20px;
+  background: var(--sheet);
+  color: var(--seal);
+  border: 1px solid var(--seal);
+  border-radius: 2px;
+  font-size: 17px;
+}
