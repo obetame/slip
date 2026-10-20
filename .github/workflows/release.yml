@@ -107,8 +107,9 @@ jobs:
           tar -xzf "$archive" -C "$RUNNER_TEMP"
           codesign --verify --strict --verbose=2 "$RUNNER_TEMP/slip"
           # spctl is the real test: it fails for a signed but un-notarized
-          # binary, which is exactly what this job exists to prevent.
-          spctl -a -vvv -t install "$RUNNER_TEMP/slip" || {
+          # binary, which is exactly what this job exists to prevent. slip is
+          # a tool people execute, so the exec policy is the one that matters.
+          spctl -a -vvv -t exec "$RUNNER_TEMP/slip" || {
             echo "Gatekeeper rejects the archive; check the notarization secrets" >&2
             exit 1
           }

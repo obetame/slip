@@ -100,30 +100,50 @@ fi
 
 stem="slip_${version}_darwin_universal"
 archive="dist/${stem}.tar.gz"
-tar -C dist -czf "$archive" slip
 
 if [ "$can_notarize" = "1" ]; then
   echo "notarize"
-  # Apple wants a zip, dmg, or pkg. A zip of the archive is the simplest.
+  # notarytool accepts only a zip, pkg, or dmg, so the binary is wrapped in
+  # a zip for the trip to Apple. stapler refuses that same zip ("incapable of
+  # working with Zip archive files"), which is why the ticket is stapled to
+  # the binary once the zip is thrown away. A bare executable is not a
+  # bundle, but stapler does accept a signed Mach-O, so the ticket travels
+  # inside the tarball and the first run needs no network.
+  submit_zip="${RUNNER_TEMP:-/tmp}/${stem}.zip"
+  ditto -c -k --sequesterRsrc --keepParent "$bin" "$submit_zip"
   if [ -n "$profile" ]; then
-    xcrun notarytool submit "$archive" --keychain-profile "$profile" --wait
+    xcrun notarytool submit "$submit_zip" --keychain-profile "$profile" --wait
   else
-    xcrun notarytool submit "$archive" \
+    xcrun notarytool submit "$submit_zip" \
       --apple-id "$apple_id" \
       --password "$apple_pass" \
       --team-id "$apple_team" \
       --wait
   fi
+  rm -f "$submit_zip"
 
   echo "staple"
-  # Stapling attaches the ticket to the archive so it works offline.
-  xcrun stapler staple "$archive"
-  xcrun stapler validate "$archive"
+  # Apple indexes the ticket a moment after notarization returns, so the
+  # first lookup can miss it. Retry for a few minutes before giving up: an
+  # unstapled binary still runs, but only while it can reach Apple.
+  attempts=0
+  until xcrun stapler staple "$bin"; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 12 ]; then
+      echo "slip: no notarization ticket could be stapled after $attempts tries" >&2
+      echo "slip: the binary is signed and notarized but needs a network check to run" >&2
+      exit 1
+    fi
+    sleep 15
+  done
+  xcrun stapler validate "$bin"
 else
   echo "skip notarization: no credentials"
 fi
 
-# The unsigned binary is a build input, not a release file. Remove it so the
+tar -C dist -czf "$archive" slip
+
+# The bare binary is a build input, not a release file. Remove it so the
 # archive and the checksums are the only things left.
 rm -f dist/slip
 
