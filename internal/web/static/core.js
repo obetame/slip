@@ -74,6 +74,11 @@
       previewClose: "收起",
       previewFileOpen: "预览",
       previewLoading: "正在读取",
+      kindAll: "全部",
+      kindEmpty: "没有这种类型。",
+      layoutList: "列表",
+      layoutGrid: "网格",
+      newItems: "有新的纸条，点击刷新",
       previewTooBig: "文件太大，不能在这里展开。",
       previewFailed: "读不出来，请下载。",
       previewBinary: "这种文件不能预览。",
@@ -159,6 +164,11 @@
       previewClose: "Close",
       previewFileOpen: "Preview",
       previewLoading: "Reading",
+      kindAll: "All",
+      kindEmpty: "Nothing of that kind.",
+      layoutList: "List",
+      layoutGrid: "Grid",
+      newItems: "New slips, tap to refresh",
       previewTooBig: "Too large to open here.",
       previewFailed: "Could not read it. Try Download.",
       previewBinary: "This file cannot be previewed.",
@@ -331,14 +341,16 @@
     if (isNaN(d.getTime()))
       return "";
     var now = /* @__PURE__ */ new Date();
-    var hm = two(d.getHours()) + ":" + two(d.getMinutes());
-    if (d.toDateString() === now.toDateString())
-      return t("today") + " " + hm;
-    var yest = new Date(now.getTime());
-    yest.setDate(now.getDate() - 1);
-    if (d.toDateString() === yest.toDateString())
-      return t("yesterday") + " " + hm;
-    return d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate()) + " " + hm;
+    return dayKey(d) === dayKey(now) ? clock(d) : fullStamp(d);
+  }
+  function clock(d) {
+    return two(d.getHours()) + ":" + two(d.getMinutes());
+  }
+  function fullStamp(d) {
+    return d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate()) + " " + clock(d);
+  }
+  function dayKey(d) {
+    return d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate());
   }
   function safeID(id) {
     return /^[0-9a-fA-F]{16}$/.test(id) ? id : "";
@@ -703,8 +715,12 @@
       busy: false,
       draft: "",
       query: "",
+      kindFilter: "",
       openPreview: {},
       openText: {},
+      layout: "",
+      newestId: "",
+      pollTimer: 0,
       editing: "",
       viewer: null,
       previewText: {},
@@ -748,6 +764,7 @@
         if (e.key === "Escape" && state.query && !isTyping()) {
           e.preventDefault();
           state.query = "";
+          state.kindFilter = "";
           route();
           return;
         }
@@ -922,6 +939,11 @@
       applyChrome();
       paintNav();
       state.errEl = null;
+      if (state.view === "board") {
+        startPolling();
+      } else {
+        stopPolling();
+      }
       if (state.view === "setup")
         renderSetup();
       else if (state.view === "waiting")
@@ -1088,9 +1110,12 @@
     }
     function visibleItems() {
       var q = state.query.trim().toLowerCase();
-      if (!q)
-        return state.items;
+      var kind = state.kindFilter;
       return state.items.filter(function(it) {
+        if (kind && it.kind !== kind)
+          return false;
+        if (!q)
+          return true;
         if (it.kind === "text" && it.text)
           return it.text.toLowerCase().indexOf(q) !== -1;
         if (it.name)
@@ -1098,11 +1123,46 @@
         return false;
       });
     }
+    function kindBar() {
+      var row = el("div", "kindbar");
+      var kinds = ["", "text", "image", "file"];
+      kinds.forEach(function(k) {
+        var n = k ? state.items.filter(function(it) {
+          return it.kind === k;
+        }).length : state.items.length;
+        if (k && !n && state.kindFilter !== k)
+          return;
+        var label = (k ? kindLabel(k) : t("kindAll")) + " " + n;
+        var b = btn(label, function() {
+          state.kindFilter = state.kindFilter === k ? "" : k;
+          if (state.view === "board")
+            renderBoard();
+        }, state.kindFilter === k ? "kindbtn is-on" : "kindbtn");
+        b.setAttribute("aria-pressed", state.kindFilter === k ? "true" : "false");
+        row.appendChild(b);
+      });
+      return row;
+    }
+    function layoutChoice() {
+      return storeGet("slip.layout") === "grid" ? "grid" : "list";
+    }
+    function setLayout(next) {
+      storeSet("slip.layout", next);
+      if (state.view === "board")
+        renderBoard();
+    }
     function renderBoard() {
       clear(node.main);
       node.main.appendChild(composer());
-      if (state.items.length || state.query.trim())
+      if (state.items.length || state.query.trim()) {
+        var grid_1 = layoutChoice() === "grid";
         node.main.appendChild(searchBar());
+        if (state.items.length) {
+          node.main.appendChild(btn(grid_1 ? t("layoutList") : t("layoutGrid"), function() {
+            setLayout(grid_1 ? "list" : "grid");
+          }, "textbtn layoutbtn"));
+        }
+      }
       if (!state.itemsLoaded) {
         node.main.appendChild(el("div", "skel"));
         if (!state.loading)
@@ -1114,17 +1174,101 @@
         shareHint();
         return;
       }
+      var kinds = state.items.reduce(function(set, it) {
+        set[it.kind] = true;
+        return set;
+      }, {});
+      if (Object.keys(kinds).length > 1 || state.kindFilter)
+        node.main.appendChild(kindBar());
       var shown = visibleItems();
       if (!shown.length) {
-        node.main.appendChild(el("p", "hint", t("searchEmpty")));
+        node.main.appendChild(el("p", "hint", state.kindFilter && !state.query.trim() ? t("kindEmpty") : t("searchEmpty")));
         return;
       }
-      shown.forEach(function(it, i) {
-        node.main.appendChild(slipNode(it, i === 0 && !state.query.trim()));
-      });
-      if (state.hasMore && !state.query.trim()) {
-        node.main.appendChild(btn(t("loadMore"), loadMore, "textbtn more"));
+      if (layoutChoice() === "grid" && !state.query.trim()) {
+        renderBoardGrid(shown);
+      } else {
+        renderBoardList(shown);
       }
+      if (state.hasMore && !state.query.trim() && !state.kindFilter) {
+        node.main.appendChild(btn(t("loadMore"), loadMore, "textbtn more"));
+        node.main.appendChild(loadMoreSentinel());
+      }
+    }
+    function renderBoardList(shown) {
+      var lastDay = "";
+      shown.forEach(function(it, i) {
+        var day = dayKeyOf(it);
+        if (day !== lastDay) {
+          lastDay = day;
+          node.main.appendChild(el("p", "daysep", dayLabel(it)));
+        }
+        node.main.appendChild(slipNode(it, i === 0 && !state.query.trim() && !state.kindFilter));
+      });
+    }
+    function renderBoardGrid(shown) {
+      var wall = el("div", "wall");
+      var rest = [];
+      shown.forEach(function(it) {
+        if (it.kind === "image" && it.hasThumb && safeID(it.id)) {
+          wall.appendChild(gridTile(it));
+        } else {
+          rest.push(it);
+        }
+      });
+      if (wall.childElementCount)
+        node.main.appendChild(wall);
+      rest.forEach(function(it) {
+        node.main.appendChild(slipNode(it, false));
+      });
+    }
+    function gridTile(it) {
+      var tile = el("div", "tile");
+      var img = el("img", "tileimg");
+      img.alt = it.name || t("imageKind");
+      img.loading = "lazy";
+      img.src = "/api/items/" + safeID(it.id) + "/thumb";
+      img.addEventListener("click", function() {
+        openViewer(it, safeID(it.id));
+      });
+      tile.appendChild(img);
+      return tile;
+    }
+    function dayKeyOf(it) {
+      var d = new Date(it.createdAt);
+      return isNaN(d.getTime()) ? "" : dayKey(d);
+    }
+    function dayLabel(it) {
+      var d = new Date(it.createdAt);
+      if (isNaN(d.getTime()))
+        return "";
+      var now = /* @__PURE__ */ new Date();
+      var yest = new Date(now.getTime());
+      yest.setDate(now.getDate() - 1);
+      if (dayKey(d) === dayKey(now))
+        return t("today");
+      if (dayKey(d) === dayKey(yest))
+        return t("yesterday");
+      return dayKey(d);
+    }
+    function loadMoreSentinel() {
+      var mark = el("div", "moresentinel");
+      if (typeof IntersectionObserver === "undefined")
+        return mark;
+      var seen = /* @__PURE__ */ new WeakMap();
+      var io = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (!entry.isIntersecting)
+            return;
+          if (seen.get(entry.target))
+            return;
+          seen.set(entry.target, true);
+          io.unobserve(entry.target);
+          loadMore();
+        });
+      });
+      io.observe(mark);
+      return mark;
     }
     function searchBar() {
       var row = el("div", "searchbar");
@@ -1136,7 +1280,18 @@
       input.setAttribute("autocorrect", "off");
       input.setAttribute("aria-label", t("searchPlaceholder"));
       input.spellcheck = false;
+      var composing = false;
+      input.addEventListener("compositionstart", function() {
+        composing = true;
+      });
+      input.addEventListener("compositionend", function() {
+        composing = false;
+        state.query = input.value;
+        repaintKeepSearch();
+      });
       input.addEventListener("input", function() {
+        if (composing)
+          return;
         state.query = input.value;
         repaintKeepSearch();
       });
@@ -1342,6 +1497,8 @@
         state.itemsLoaded = true;
         state.items = body.items || [];
         state.hasMore = !!body.hasMore;
+        noteNewest();
+        startPolling();
         if (state.view === "board")
           renderBoard();
       }).catch(function(err) {
@@ -1359,12 +1516,50 @@
         state.itemsLoaded = true;
         state.items = body.items || [];
         state.hasMore = !!body.hasMore;
+        noteNewest();
         if (state.view === "board")
           renderBoard();
       });
     }
+    function noteNewest() {
+      state.newestId = state.items.length ? state.items[0].id : "";
+    }
+    function startPolling() {
+      if (state.pollTimer)
+        return;
+      state.pollTimer = setInterval(function() {
+        if (state.view !== "board" || document.hidden)
+          return;
+        api("/api/items?limit=1").then(function(body) {
+          var top = body.items && body.items[0];
+          if (!top || !state.newestId || top.id === state.newestId)
+            return;
+          if (document.getElementById("newbar"))
+            return;
+          var bar = btn(t("newItems"), function() {
+            if (bar.parentNode)
+              bar.parentNode.removeChild(bar);
+            refresh();
+          }, "newbar");
+          bar.id = "newbar";
+          document.body.appendChild(bar);
+        }).catch(function() {
+        });
+      }, 2e4);
+    }
+    function stopPolling() {
+      if (state.pollTimer) {
+        clearInterval(state.pollTimer);
+        state.pollTimer = 0;
+      }
+      var bar = document.getElementById("newbar");
+      if (bar && bar.parentNode)
+        bar.parentNode.removeChild(bar);
+    }
     function loadMore() {
       if (state.loading || !state.items.length)
+        return;
+      if (state.query.trim() || state.kindFilter)
         return;
       state.loading = true;
       var last = state.items[state.items.length - 1].id;
@@ -1380,6 +1575,13 @@
           showErr(err);
       });
     }
+    function kindGlyph(kind) {
+      if (kind === "image")
+        return "▣ ";
+      if (kind === "file")
+        return "▤ ";
+      return "❏ ";
+    }
     function metaText(it) {
       var parts = [];
       var when = formatTime(it.createdAt);
@@ -1394,8 +1596,9 @@
     function slipNode(it, newest) {
       var id = safeID(it.id);
       var card = el("article", newest ? "slip is-new" : "slip");
+      card.setAttribute("data-kind", it.kind);
       var head = el("div", "sliphead");
-      var kindTag = el("span", "kindtag", kindLabel(it.kind));
+      var kindTag = el("span", "kindtag", kindGlyph(it.kind) + kindLabel(it.kind));
       head.appendChild(kindTag);
       head.appendChild(el("span", "meta", metaText(it)));
       var row = el("div", "row");
@@ -1706,11 +1909,46 @@
           viewerStep(1);
         }, "viewer-btn"));
       }
+      var copyB = btn(t("copy"), function() {
+        copyImage(id, copyB);
+      }, "viewer-btn");
+      bar.appendChild(copyB);
       var dl = el("a", "viewer-btn", t("download"));
       dl.href = "/api/items/" + safeID(id) + "/raw?dl=1";
       bar.appendChild(dl);
       bar.appendChild(btn(t("close"), closeViewer, "viewer-btn"));
       layer.appendChild(bar);
+    }
+    function copyImage(id, button) {
+      var url = "/api/items/" + id + "/raw";
+      var label = button.textContent;
+      fetch(url, { credentials: "same-origin" }).then(function(res) {
+        if (!res.ok)
+          throw new Error("bad status");
+        return res.blob();
+      }).then(function(blob) {
+        var _a;
+        if (!navigator.clipboard || typeof navigator.clipboard.write !== "function") {
+          throw new Error("no clipboard.write");
+        }
+        return navigator.clipboard.write([new ClipboardItem((_a = {}, _a[blob.type] = blob, _a))]).then(function() {
+          button.textContent = t("copied");
+          say(t("copied"));
+          setTimeout(function() {
+            if (button.isConnected)
+              button.textContent = label;
+          }, 1600);
+        });
+      }).catch(function() {
+        copyText(location.origin + url).then(function(ok) {
+          say(ok ? t("copied") : t("copyFail"));
+          button.textContent = ok ? t("copied") : label;
+          setTimeout(function() {
+            if (button.isConnected)
+              button.textContent = label;
+          }, 1600);
+        });
+      });
     }
     function removeItem(id) {
       api("/api/items/" + id, { method: "DELETE" }).then(function() {

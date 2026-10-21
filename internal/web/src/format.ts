@@ -1,4 +1,4 @@
-// format holds the small presentation helpers. They never throw on
+// format.ts holds the small presentation helpers. They never throw on
 // odd input, because they sit on the path that renders a slip.
 
 import { t, lang } from "./i18n";
@@ -63,12 +63,22 @@ export function formatTime(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
   const now = new Date();
-  const hm = two(d.getHours()) + ":" + two(d.getMinutes());
-  if (d.toDateString() === now.toDateString()) return t("today") + " " + hm;
-  const yest = new Date(now.getTime());
-  yest.setDate(now.getDate() - 1);
-  if (d.toDateString() === yest.toDateString()) return t("yesterday") + " " + hm;
-  return d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate()) + " " + hm;
+  return dayKey(d) === dayKey(now) ? clock(d) : fullStamp(d);
+}
+
+// clock is the bare hour and minute, for slips from today.
+function clock(d: Date): string {
+  return two(d.getHours()) + ":" + two(d.getMinutes());
+}
+
+// fullStamp is the dated form used once a slip is no longer from today.
+function fullStamp(d: Date): string {
+  return d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate()) + " " + clock(d);
+}
+
+// dayKey buckets a date by calendar day, for grouping and comparisons.
+export function dayKey(d: Date): string {
+  return d.getFullYear() + "-" + two(d.getMonth() + 1) + "-" + two(d.getDate());
 }
 
 // safeID keeps a server id usable in a URL and drops anything else.

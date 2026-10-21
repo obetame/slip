@@ -9,6 +9,13 @@
       var savedLang = localStorage.getItem("slip.lang");
       if (savedTheme === "dark")
         theme = "dark";
+      if (savedTheme === "light")
+        theme = "light";
+      if (savedTheme !== "dark" && savedTheme !== "light") {
+        var mq = window.matchMedia;
+        if (mq && mq("(prefers-color-scheme: dark)").matches)
+          theme = "dark";
+      }
       if (savedLang === "en")
         lang = "en";
     } catch (e) {

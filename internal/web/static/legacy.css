@@ -132,19 +132,39 @@ textarea {
   border-bottom: 1px solid var(--line);
 }
 
-/* The kind tag leads the header. It borrows the seal's red so the
-   type of a slip reads at a glance. */
+/* The kind tag leads the header. Each kind keeps its own colour so
+   text, pictures, and files read apart at a glance. */
 
 .kindtag {
   float: left;
-  background: var(--seal);
-  color: var(--seal-ink);
   border-radius: 2px;
   font-size: 12px;
   line-height: 1;
   padding: 4px 6px;
   margin: 12px 8px 0 0;
   letter-spacing: 0.08em;
+  background: var(--seal);
+  color: var(--seal-ink);
+}
+
+.slip[data-kind="image"] .kindtag {
+  background: #4a6b4f;
+  color: #eef2ec;
+}
+
+.slip[data-kind="file"] .kindtag {
+  background: #8a6a2f;
+  color: #f7f2e6;
+}
+
+:root[data-theme="dark"] .slip[data-kind="image"] .kindtag {
+  background: #5d8463;
+  color: #10130f;
+}
+
+:root[data-theme="dark"] .slip[data-kind="file"] .kindtag {
+  background: #ab874b;
+  color: #171307;
 }
 
 .sliphead:after {
@@ -165,6 +185,98 @@ textarea {
 
 .sliphead .row { margin: 0; }
 .sliphead .row .textbtn { float: right; margin: 0 0 0 8px; }
+
+/* Kind filter, layout toggle, and day separators for the iOS 12 page.
+   No flex gap: spacing is margins, the bar clears with :after. */
+
+.kindbar {
+  margin-top: 8px;
+}
+.kindbar:after {
+  content: "";
+  display: block;
+  clear: both;
+}
+
+.kindbtn {
+  float: left;
+  font-family: inherit;
+  font-size: 14px;
+  min-height: 36px;
+  padding: 0 12px;
+  margin: 0 8px 8px 0;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.kindbtn.is-on {
+  background: var(--seal);
+  color: var(--seal-ink);
+  border-color: var(--seal);
+}
+
+.layoutbtn {
+  float: right;
+  min-height: 36px;
+  font-size: 14px;
+}
+
+.daysep {
+  margin: 22px 0 2px;
+  font-size: 13px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+}
+
+/* Grid layout on iOS 12: inline-block tiles in a two-column wall. */
+
+.wall {
+  margin-top: 14px;
+}
+.wall:after {
+  content: "";
+  display: block;
+  clear: both;
+}
+
+.tile {
+  float: left;
+  width: 50%;
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tileimg {
+  display: block;
+  width: 100%;
+  height: 150px;
+  background: var(--bg);
+}
+
+/* New-slips bar. */
+
+.newbar {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 80px;
+  z-index: 4;
+  font-family: inherit;
+  font-size: 15px;
+  min-height: 44px;
+  cursor: pointer;
+  background: var(--seal);
+  color: var(--seal-ink);
+  border: 0;
+  border-radius: 2px;
+}
 
 /* A folded text slip keeps twelve lines and fades at the cut. */
 

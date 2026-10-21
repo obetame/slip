@@ -9,7 +9,7 @@
 import { api, postJSON, codeErr, errText } from "./api";
 import { btn, clear, el } from "./dom";
 import { t, lang } from "./i18n";
-import { byteLength, formatBytes, formatTime, kindLabel, safeID, storeSet, themeNow } from "./format";
+import { byteLength, dayKey, formatBytes, formatTime, kindLabel, safeID, storeGet, storeSet, themeNow } from "./format";
 import { allFiles, classifyPaste, previewable } from "./clip";
 import { copyText } from "./clipboard";
 import { render as renderMarkdown, isMarkdown } from "./markdown";
@@ -41,8 +41,12 @@ interface State {
   busy: boolean;
   draft: string;
   query: string;
+  kindFilter: string;
   openPreview: { [id: string]: boolean };
   openText: { [id: string]: boolean };
+  layout: string;
+  newestId: string;
+  pollTimer: number;
   editing: string;
   viewer: { id: string; name: string } | null;
   previewText: { [id: string]: string | null };
@@ -72,8 +76,12 @@ export function start(page: Page, node: Node): void {
     busy: false,
     draft: "",
     query: "",
+    kindFilter: "",
     openPreview: {},
     openText: {},
+    layout: "",
+    newestId: "",
+    pollTimer: 0,
     editing: "",
     viewer: null,
     previewText: {},
@@ -128,6 +136,7 @@ export function start(page: Page, node: Node): void {
       if (e.key === "Escape" && state.query && !isTyping()) {
         e.preventDefault();
         state.query = "";
+        state.kindFilter = "";
         route();
         return;
       }
@@ -321,6 +330,11 @@ export function start(page: Page, node: Node): void {
     applyChrome();
     paintNav();
     state.errEl = null;
+    if (state.view === "board") {
+      startPolling();
+    } else {
+      stopPolling();
+    }
     if (state.view === "setup") renderSetup();
     else if (state.view === "waiting") renderWaiting();
     else if (state.view === "login") renderLogin();
@@ -504,12 +518,47 @@ export function start(page: Page, node: Node): void {
 
   function visibleItems(): Item[] {
     const q = state.query.trim().toLowerCase();
-    if (!q) return state.items;
+    const kind = state.kindFilter;
     return state.items.filter(function (it) {
+      if (kind && it.kind !== kind) return false;
+      if (!q) return true;
       if (it.kind === "text" && it.text) return it.text.toLowerCase().indexOf(q) !== -1;
       if (it.name) return it.name.toLowerCase().indexOf(q) !== -1;
       return false;
     });
+  }
+
+  // kindBar sits beside the search field. It narrows the board by slip
+  // kind; the counts make an empty choice visible before it is made.
+  // The bar only renders when a filter or a search is active or the
+  // board has more than one kind, so a board of nothing but notes does
+  // not grow a control nobody needs.
+  function kindBar(): HTMLElement {
+    const row = el("div", "kindbar");
+    const kinds = ["", "text", "image", "file"];
+    kinds.forEach(function (k) {
+      const n = k ? state.items.filter(function (it) { return it.kind === k; }).length : state.items.length;
+      if (k && !n && state.kindFilter !== k) return;
+      const label = (k ? kindLabel(k) : t("kindAll")) + " " + n;
+      const b = btn(label, function () {
+        state.kindFilter = state.kindFilter === k ? "" : k;
+        if (state.view === "board") renderBoard();
+      }, state.kindFilter === k ? "kindbtn is-on" : "kindbtn");
+      b.setAttribute("aria-pressed", state.kindFilter === k ? "true" : "false");
+      row.appendChild(b);
+    });
+    return row;
+  }
+
+  // layoutChoice reads the saved board layout. Grid is opt-in: the list
+  // is the default because it shows text slips in full.
+  function layoutChoice(): "list" | "grid" {
+    return storeGet("slip.layout") === "grid" ? "grid" : "list";
+  }
+
+  function setLayout(next: "list" | "grid"): void {
+    storeSet("slip.layout", next);
+    if (state.view === "board") renderBoard();
   }
 
   function renderBoard(): void {
@@ -517,7 +566,17 @@ export function start(page: Page, node: Node): void {
     node.main.appendChild(composer());
     // The search field is always present once there is something to find,
     // otherwise there is no way to start a search.
-    if (state.items.length || state.query.trim()) node.main.appendChild(searchBar());
+    if (state.items.length || state.query.trim()) {
+      const grid = layoutChoice() === "grid";
+      node.main.appendChild(searchBar());
+      if (state.items.length) {
+        node.main.appendChild(
+          btn(grid ? t("layoutList") : t("layoutGrid"), function () {
+            setLayout(grid ? "list" : "grid");
+          }, "textbtn layoutbtn")
+        );
+      }
+    }
     if (!state.itemsLoaded) {
       node.main.appendChild(el("div", "skel"));
       if (!state.loading) loadFirst();
@@ -528,22 +587,122 @@ export function start(page: Page, node: Node): void {
       shareHint();
       return;
     }
+    const kinds = state.items.reduce(function (set, it) {
+      set[it.kind] = true;
+      return set;
+    }, {} as { [kind: string]: boolean });
+    if (Object.keys(kinds).length > 1 || state.kindFilter) node.main.appendChild(kindBar());
     const shown = visibleItems();
     if (!shown.length) {
-      node.main.appendChild(el("p", "hint", t("searchEmpty")));
+      node.main.appendChild(el("p", "hint", state.kindFilter && !state.query.trim() ? t("kindEmpty") : t("searchEmpty")));
       return;
     }
-    shown.forEach(function (it, i) {
-      node.main.appendChild(slipNode(it, i === 0 && !state.query.trim()));
-    });
-    if (state.hasMore && !state.query.trim()) {
-      node.main.appendChild(btn(t("loadMore"), loadMore, "textbtn more"));
+    if (layoutChoice() === "grid" && !state.query.trim()) {
+      renderBoardGrid(shown);
+    } else {
+      renderBoardList(shown);
     }
+    if (state.hasMore && !state.query.trim() && !state.kindFilter) {
+      node.main.appendChild(btn(t("loadMore"), loadMore, "textbtn more"));
+      node.main.appendChild(loadMoreSentinel());
+    }
+  }
+
+  // renderBoardList is the classic single column, with day separators
+  // between slips from different days so older content can be found
+  // by date while scrolling.
+  function renderBoardList(shown: Item[]): void {
+    let lastDay = "";
+    shown.forEach(function (it, i) {
+      const day = dayKeyOf(it);
+      if (day !== lastDay) {
+        lastDay = day;
+        node.main.appendChild(el("p", "daysep", dayLabel(it)));
+      }
+      node.main.appendChild(slipNode(it, i === 0 && !state.query.trim() && !state.kindFilter));
+    });
+  }
+
+  // renderBoardGrid is the picture-wall layout: images become tiles in
+  // a flowing two-column wall, everything else stacks beneath them.
+  // It is opt-in through the header toggle.
+  function renderBoardGrid(shown: Item[]): void {
+    const wall = el("div", "wall");
+    const rest: Item[] = [];
+    shown.forEach(function (it) {
+      if (it.kind === "image" && it.hasThumb && safeID(it.id)) {
+        wall.appendChild(gridTile(it));
+      } else {
+        rest.push(it);
+      }
+    });
+    if (wall.childElementCount) node.main.appendChild(wall);
+    rest.forEach(function (it) {
+      node.main.appendChild(slipNode(it, false));
+    });
+  }
+
+  function gridTile(it: Item): HTMLElement {
+    const tile = el("div", "tile");
+    const img = el("img", "tileimg") as HTMLImageElement;
+    img.alt = it.name || t("imageKind");
+    img.loading = "lazy";
+    img.src = "/api/items/" + safeID(it.id) + "/thumb";
+    img.addEventListener("click", function () {
+      openViewer(it, safeID(it.id));
+    });
+    tile.appendChild(img);
+    return tile;
+  }
+
+  function dayKeyOf(it: Item): string {
+    const d = new Date(it.createdAt);
+    return isNaN(d.getTime()) ? "" : dayKey(d);
+  }
+
+  // dayLabel names the group a slip belongs to: today, yesterday, or
+  // the plain date.
+  function dayLabel(it: Item): string {
+    const d = new Date(it.createdAt);
+    if (isNaN(d.getTime())) return "";
+    const now = new Date();
+    const yest = new Date(now.getTime());
+    yest.setDate(now.getDate() - 1);
+    if (dayKey(d) === dayKey(now)) return t("today");
+    if (dayKey(d) === dayKey(yest)) return t("yesterday");
+    return dayKey(d);
+  }
+
+  // loadMoreSentinel is an empty marker at the end of the list. When it
+  // scrolls into view the next page loads by itself; the button above
+  // it stays for keyboards and for browsers without IntersectionObserver.
+  function loadMoreSentinel(): HTMLElement {
+    const mark = el("div", "moresentinel");
+    if (typeof IntersectionObserver === "undefined") return mark;
+    const seen = new WeakMap();
+    const io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        if (seen.get(entry.target)) return;
+        seen.set(entry.target, true);
+        io.unobserve(entry.target);
+        loadMore();
+      });
+    });
+    io.observe(mark);
+    return mark;
   }
 
   // searchBar is the only control that edits state.query. It re-renders on
   // input so the list narrows as you type, and it takes the caret back
   // afterwards because renderBoard rebuilds the whole board.
+  //
+  // Composition is why the input handler checks isComposing. A Chinese
+  // IME fires input events for every pinyin letter before the person
+  // confirms a character; repainting mid-composition both commits the
+  // raw letters into the query and rebuilds the field out from under
+  // the IME. compositionend fires when a candidate is confirmed, and
+  // the input event that follows it carries the final text.
   function searchBar(): HTMLElement {
     const row = el("div", "searchbar");
     const input = el("input", "search") as HTMLInputElement;
@@ -554,7 +713,17 @@ export function start(page: Page, node: Node): void {
     input.setAttribute("autocorrect", "off");
     input.setAttribute("aria-label", t("searchPlaceholder"));
     input.spellcheck = false;
+    let composing = false;
+    input.addEventListener("compositionstart", function () {
+      composing = true;
+    });
+    input.addEventListener("compositionend", function () {
+      composing = false;
+      state.query = input.value;
+      repaintKeepSearch();
+    });
     input.addEventListener("input", function () {
+      if (composing) return;
       state.query = input.value;
       repaintKeepSearch();
     });
@@ -777,6 +946,8 @@ export function start(page: Page, node: Node): void {
         state.itemsLoaded = true;
         state.items = body.items || [];
         state.hasMore = !!body.hasMore;
+        noteNewest();
+        startPolling();
         if (state.view === "board") renderBoard();
       })
       .catch(function (err) {
@@ -793,12 +964,56 @@ export function start(page: Page, node: Node): void {
       state.itemsLoaded = true;
       state.items = body.items || [];
       state.hasMore = !!body.hasMore;
+      noteNewest();
       if (state.view === "board") renderBoard();
     });
   }
 
+  // noteNewest remembers the id at the top of the board. It is what
+  // the poll compares against to spot slips made on other devices.
+  function noteNewest(): void {
+    state.newestId = state.items.length ? state.items[0].id : "";
+  }
+
+  // startPolling asks for the newest slip every twenty seconds. A GET
+  // of one item is cheap on a home network, and the reply only turns
+  // into a bar at the top when it is a slip this tab has not seen.
+  // The poll runs while the board is showing; the timer is cleared on
+  // every route away from it.
+  function startPolling(): void {
+    if (state.pollTimer) return;
+    state.pollTimer = setInterval(function () {
+      if (state.view !== "board" || document.hidden) return;
+      api<ItemsBody>("/api/items?limit=1")
+        .then(function (body) {
+          const top = body.items && body.items[0];
+          if (!top || !state.newestId || top.id === state.newestId) return;
+          if (document.getElementById("newbar")) return;
+          const bar = btn(t("newItems"), function () {
+            if (bar.parentNode) bar.parentNode.removeChild(bar);
+            refresh();
+          }, "newbar");
+          bar.id = "newbar";
+          document.body.appendChild(bar);
+        })
+        .catch(function () {
+          // Offline for a moment; the poll simply tries again.
+        });
+    }, 20000);
+  }
+
+  function stopPolling(): void {
+    if (state.pollTimer) {
+      clearInterval(state.pollTimer);
+      state.pollTimer = 0;
+    }
+    const bar = document.getElementById("newbar");
+    if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
+  }
+
   function loadMore(): void {
     if (state.loading || !state.items.length) return;
+    if (state.query.trim() || state.kindFilter) return;
     state.loading = true;
     const last = state.items[state.items.length - 1].id;
     api<ItemsBody>("/api/items?limit=40&before=" + encodeURIComponent(last))
@@ -816,6 +1031,15 @@ export function start(page: Page, node: Node): void {
 
   // ---- slips --------------------------------------------------------
 
+  // kindGlyph is a small pictogram that rides in the kind tag. Text
+  // glyphs rather than images: they need no requests, work on iOS 12,
+  // and pass the strict CSP without exception.
+  function kindGlyph(kind: string): string {
+    if (kind === "image") return "\u25A3 "; // square with inner square
+    if (kind === "file") return "\u25A4 ";  // square with inner lines
+    return "\u274F ";                        // lower-right pencil
+  }
+
   function metaText(it: Item): string {
     const parts: string[] = [];
     const when = formatTime(it.createdAt);
@@ -831,6 +1055,9 @@ export function start(page: Page, node: Node): void {
   function slipNode(it: Item, newest: boolean): HTMLElement {
     const id = safeID(it.id);
     const card = el("article", newest ? "slip is-new" : "slip");
+    // The kind drives the tag colour in the CSS; data-kind keeps that
+    // choice in the document rather than in a class-name string.
+    card.setAttribute("data-kind", it.kind);
 
     // The header holds the time on the left and the actions on the
     // right. It sticks to the viewport top while its card is on
@@ -839,7 +1066,7 @@ export function start(page: Page, node: Node): void {
     // header as a small seal, because "text, picture, or file" is the
     // first thing a person scans for.
     const head = el("div", "sliphead");
-    const kindTag = el("span", "kindtag", kindLabel(it.kind));
+    const kindTag = el("span", "kindtag", kindGlyph(it.kind) + kindLabel(it.kind));
     head.appendChild(kindTag);
     head.appendChild(el("span", "meta", metaText(it)));
     const row = el("div", "row");
@@ -1178,11 +1405,51 @@ export function start(page: Page, node: Node): void {
     if (many) {
       bar.appendChild(btn(">", function () { viewerStep(1); }, "viewer-btn"));
     }
+    // Copy puts the picture on the clipboard where the browser allows
+    // it, so it can be pasted into a chat without saving the file.
+    const copyB = btn(t("copy"), function () {
+      copyImage(id, copyB);
+    }, "viewer-btn");
+    bar.appendChild(copyB);
     const dl = el("a", "viewer-btn", t("download")) as HTMLAnchorElement;
     dl.href = "/api/items/" + safeID(id) + "/raw?dl=1";
     bar.appendChild(dl);
     bar.appendChild(btn(t("close"), closeViewer, "viewer-btn"));
     layer.appendChild(bar);
+  }
+
+  // copyImage writes a picture to the clipboard as an image. Not every
+  // browser allows it; a refusal falls back to copying the raw URL so
+  // the button still does something useful.
+  function copyImage(id: string, button: HTMLButtonElement): void {
+    const url = "/api/items/" + id + "/raw";
+    const label = button.textContent;
+    fetch(url, { credentials: "same-origin" })
+      .then(function (res) {
+        if (!res.ok) throw new Error("bad status");
+        return res.blob();
+      })
+      .then(function (blob) {
+        if (!navigator.clipboard || typeof (navigator.clipboard as any).write !== "function") {
+          throw new Error("no clipboard.write");
+        }
+        return navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]).then(function () {
+          button.textContent = t("copied");
+          say(t("copied"));
+          setTimeout(function () {
+            if (button.isConnected) button.textContent = label;
+          }, 1600);
+        });
+      })
+      .catch(function () {
+        copyText(location.origin + url).then(function (ok) {
+          say(ok ? t("copied") : t("copyFail"));
+          button.textContent = ok ? t("copied") : label;
+          setTimeout(function () {
+            if (button.isConnected) button.textContent = label;
+          }, 1600);
+        });
+      });
   }
 
   // ---- delete and undo ----------------------------------------------

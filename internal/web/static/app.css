@@ -186,19 +186,40 @@ textarea {
   border-bottom: 1px solid var(--line);
 }
 
-/* The kind tag leads the header. It borrows the seal's red so the
-   type of a slip reads at a glance, before the grey time and size. */
+/* The kind tag leads the header. Each slip kind gets its own colour,
+   so text, pictures, and files read apart at a glance: seal red for
+   text, moss green for pictures, ochre for files. */
 
 .kindtag {
   flex: none;
   align-self: center;
-  background: var(--seal);
-  color: var(--seal-ink);
   border-radius: 2px;
   font-size: 12px;
   line-height: 1;
   padding: 4px 6px;
   letter-spacing: 0.08em;
+  background: var(--seal);
+  color: var(--seal-ink);
+}
+
+.slip[data-kind="image"] .kindtag {
+  background: #4a6b4f;
+  color: #eef2ec;
+}
+
+.slip[data-kind="file"] .kindtag {
+  background: #8a6a2f;
+  color: #f7f2e6;
+}
+
+:root[data-theme="dark"] .slip[data-kind="image"] .kindtag {
+  background: #5d8463;
+  color: #10130f;
+}
+
+:root[data-theme="dark"] .slip[data-kind="file"] .kindtag {
+  background: #ab874b;
+  color: #171307;
 }
 
 .sliphead .meta {
@@ -218,6 +239,107 @@ textarea {
   margin: 0;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+/* Kind filter, layout toggle, and day separators. */
+
+.kindbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.kindbtn {
+  font: inherit;
+  cursor: pointer;
+  min-height: 36px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  font-size: 14px;
+  touch-action: manipulation;
+}
+
+.kindbtn.is-on {
+  background: var(--seal);
+  color: var(--seal-ink);
+  border-color: var(--seal);
+}
+
+.layoutbtn {
+  min-height: 36px;
+  font-size: 14px;
+  padding: 0 4px;
+}
+
+.daysep {
+  margin: 22px 0 2px;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.daysep::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+
+.moresentinel {
+  height: 1px;
+}
+
+/* Grid layout: a flowing two-column wall for pictures. */
+
+.wall {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.tile {
+  width: calc(50% - 4px);
+  background: var(--sheet);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.tileimg {
+  display: block;
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  background: var(--bg);
+  cursor: zoom-in;
+}
+
+/* New-slips bar. It borrows the undo bar's place at the bottom. */
+
+.newbar {
+  position: fixed;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  z-index: 4;
+  font: inherit;
+  font-size: 15px;
+  min-height: 44px;
+  padding: 0 18px;
+  cursor: pointer;
+  touch-action: manipulation;
+  background: var(--seal);
+  color: var(--seal-ink);
+  border: 0;
+  border-radius: 2px;
+  box-shadow: var(--shadow);
 }
 
 /* A folded text slip fades out at the cut, so the fold reads as
