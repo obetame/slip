@@ -117,6 +117,48 @@ textarea {
 .row .textbtn { float: left; }
 
 .meta { color: var(--muted); font-size: 16px; margin: 0 0 8px; }
+
+/* Slip header: time on the left, actions on the right. It sticks to
+   the viewport top while its card is on screen. No flex gap: the two
+   sides are floated, per the Safari 12 rules at the top of this file. */
+
+.sliphead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--sheet);
+  margin: -16px -16px 8px;
+  padding: 6px 16px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sliphead:after {
+  content: "";
+  display: block;
+  clear: both;
+}
+
+.sliphead .meta {
+  float: left;
+  margin: 0;
+  line-height: 44px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+
+.sliphead .row { margin: 0; }
+.sliphead .row .textbtn { float: right; margin: 0 0 0 8px; }
+
+/* A folded text slip keeps twelve lines and fades at the cut. */
+
+.body { position: relative; }
+
+.body.folded {
+  max-height: 13.5em;
+  overflow: hidden;
+}
 .body {
   margin: 0;
   white-space: pre-wrap;

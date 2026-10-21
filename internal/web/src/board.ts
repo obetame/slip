@@ -42,6 +42,7 @@ interface State {
   draft: string;
   query: string;
   openPreview: { [id: string]: boolean };
+  openText: { [id: string]: boolean };
   editing: string;
   viewer: { id: string; name: string } | null;
   previewText: { [id: string]: string | null };
@@ -53,6 +54,9 @@ const textCap = 200 * 1024;
 // previewCap keeps a text attachment readable; larger ones get a link.
 const previewCap = 256 * 1024;
 const undoMillis = 8000;
+// Long text slips start folded to this many lines. A full render of a
+// note-sized slip would push every action row below the fold.
+const textFoldLines = 12;
 
 export function start(page: Page, node: Node): void {
   const state: State = {
@@ -69,6 +73,7 @@ export function start(page: Page, node: Node): void {
     draft: "",
     query: "",
     openPreview: {},
+    openText: {},
     editing: "",
     viewer: null,
     previewText: {},
@@ -284,6 +289,7 @@ export function start(page: Page, node: Node): void {
     state.items = [];
     state.itemsLoaded = false;
     state.openPreview = {};
+    state.openText = {};
     state.previewText = {};
     state.confirmClear = false;
     route();
@@ -823,53 +829,16 @@ export function start(page: Page, node: Node): void {
   // confirmButton asks twice for anything hard to take back. The first
   // click arms the button, the second click acts. Arming is forgotten on
   // the next render, so nothing stays armed for long.
-  function confirmButton(label: string, confirmLabel: string, act: () => void): HTMLButtonElement {
-    const b = btn(label, function () {
-      if (b.dataset.armed === "1") {
-        act();
-        return;
-      }
-      b.dataset.armed = "1";
-      b.textContent = confirmLabel;
-      b.classList.add("danger");
-      setTimeout(function () {
-        if (!b.isConnected) return;
-        b.dataset.armed = "";
-        b.textContent = label;
-        b.classList.remove("danger");
-      }, 3000);
-    });
-    return b;
-  }
-
   function slipNode(it: Item, newest: boolean): HTMLElement {
     const id = safeID(it.id);
     const card = el("article", newest ? "slip is-new" : "slip");
-    const meta = el("div", "meta");
-    meta.appendChild(el("span", "", metaText(it)));
-    card.appendChild(meta);
 
-    if (it.kind === "text" && state.editing === id) {
-      card.appendChild(textEditor(it, id));
-    } else if (it.kind === "text") {
-      card.appendChild(el("pre", "body", it.text || ""));
-    } else if (it.kind === "image" && it.hasThumb && id) {
-      const img = el("img", "shot") as HTMLImageElement;
-      img.alt = it.name || t("imageKind");
-      img.src = "/api/items/" + id + "/thumb";
-      img.addEventListener("click", function () {
-        openViewer(it, id);
-      });
-      card.appendChild(img);
-    } else {
-      const nameRow = el("p", "fname", it.name || t("fileKind"));
-      card.appendChild(nameRow);
-      if (id && previewable(it)) {
-        const pv = previewBody(it, id);
-        if (pv) card.appendChild(pv);
-      }
-    }
-
+    // The header holds the time on the left and the actions on the
+    // right. It sticks to the viewport top while its card is on
+    // screen, so a long slip can be closed or deleted without
+    // scrolling back to where the card began.
+    const head = el("div", "sliphead");
+    head.appendChild(el("span", "meta", metaText(it)));
     const row = el("div", "row");
     if (it.kind === "text") {
       const copy = btn(t("copy"), function () {
@@ -877,7 +846,7 @@ export function start(page: Page, node: Node): void {
       }, "textbtn");
       row.appendChild(copy);
     }
-    if (id && previewable(it)) {
+    if (it.kind !== "text" && id && previewable(it)) {
       // The toggle sits with the other actions, not under the file name,
       // so every operation on a slip is in one place.
       const open = !!state.openPreview[id];
@@ -888,6 +857,21 @@ export function start(page: Page, node: Node): void {
           } else {
             state.openPreview[id] = true;
             loadPreview(it, id);
+          }
+          if (state.view === "board") renderBoard();
+        }, "textbtn")
+      );
+    } else if (it.kind === "text" && id && countLines(it.text || "") > textFoldLines) {
+      // The same toggle folds a long text slip back up. Only a slip
+      // that starts folded gets one, so the row is not crowded with a
+      // control that would do nothing.
+      const open = !!state.openText[id];
+      row.appendChild(
+        btn(open ? t("previewClose") : t("previewOpen"), function () {
+          if (state.openText[id]) {
+            delete state.openText[id];
+          } else {
+            state.openText[id] = true;
           }
           if (state.view === "board") renderBoard();
         }, "textbtn")
@@ -904,12 +888,85 @@ export function start(page: Page, node: Node): void {
     if (id && page.canPreview(it)) row.appendChild(fileLink(t("view"), "/api/items/" + id + "/raw"));
     if (id && it.kind !== "text") row.appendChild(fileLink(t("download"), "/api/items/" + id + "/raw?dl=1"));
     if (id) {
+      // The class matters: without it this button keeps the browser's
+      // default chrome while every neighbour is a quiet text button.
       row.appendChild(confirmButton(t("remove"), t("confirmRemove"), function () {
         removeItem(id);
-      }));
+      }, "textbtn"));
     }
-    card.appendChild(row);
+    head.appendChild(row);
+    card.appendChild(head);
+
+    if (it.kind === "text" && state.editing === id) {
+      card.appendChild(textEditor(it, id));
+    } else if (it.kind === "text") {
+      card.appendChild(textBody(it, id));
+    } else if (it.kind === "image" && it.hasThumb && id) {
+      const img = el("img", "shot") as HTMLImageElement;
+      img.alt = it.name || t("imageKind");
+      img.src = "/api/items/" + id + "/thumb";
+      img.addEventListener("click", function () {
+        openViewer(it, id);
+      });
+      card.appendChild(img);
+    } else {
+      const nameRow = el("p", "fname", it.name || t("fileKind"));
+      card.appendChild(nameRow);
+      if (id && previewable(it)) {
+        const pv = previewBody(it, id);
+        if (pv) card.appendChild(pv);
+      }
+    }
     return card;
+  }
+
+  // textBody renders a text slip. A slip longer than textFoldLines
+  // lines starts folded and is opened with the toggle in the header;
+  // a short one always shows in full and gets no toggle.
+  function textBody(it: Item, id: string): HTMLElement {
+    const body = el("pre", "body", it.text || "");
+    if (countLines(it.text || "") <= textFoldLines) return body;
+    if (state.editing === id) return body;
+    const open = !!state.openText[id];
+    if (!open) body.classList.add("folded");
+    body.setAttribute("aria-expanded", open ? "true" : "false");
+    return body;
+  }
+
+  // countLines counts rendered lines: newlines plus the wraps a long
+  // unbroken run will take at roughly 40 characters per line.
+  function countLines(text: string): number {
+    const lines = text.split("\n");
+    let n = 0;
+    let i;
+    for (i = 0; i < lines.length; i++) {
+      const extra = Math.floor(lines[i].length / 40);
+      n = n + 1 + extra;
+    }
+    return n;
+  }
+
+  // confirmButton asks twice for anything hard to take back. The first
+  // click arms the button, the second click acts. Arming is forgotten on
+  // the next render, so nothing stays armed for long.
+  function confirmButton(label: string, confirmLabel: string, act: () => void, cls?: string): HTMLButtonElement {
+    const b = btn(label, function () {
+      if (b.dataset.armed === "1") {
+        act();
+        return;
+      }
+      b.dataset.armed = "1";
+      b.textContent = confirmLabel;
+      b.classList.add("danger");
+      setTimeout(function () {
+        if (!b.isConnected) return;
+        b.dataset.armed = "";
+        b.textContent = label;
+        b.classList.remove("danger");
+      }, 3000);
+    });
+    if (cls) b.className = cls;
+    return b;
   }
 
   // previewBody renders the opened preview under the file name. The toggle
@@ -1132,6 +1189,7 @@ export function start(page: Page, node: Node): void {
           return it.id !== id;
         });
         delete state.openPreview[id];
+        delete state.openText[id];
         delete state.previewText[id];
         queueUndo([id]);
         if (state.view === "board") renderBoard();
@@ -1257,6 +1315,7 @@ export function start(page: Page, node: Node): void {
             state.itemsLoaded = true;
             state.hasMore = false;
             state.openPreview = {};
+            state.openText = {};
             state.previewText = {};
             state.view = "board";
             queueUndo(body.ids || []);

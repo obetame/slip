@@ -168,6 +168,67 @@ textarea {
   margin-bottom: 8px;
 }
 
+/* Slip header: time on the left, actions on the right. It sticks to
+   the viewport top while its card is on screen, so a long slip can be
+   folded, edited, or deleted without scrolling back to its start. */
+
+.sliphead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--sheet);
+  margin: -16px -16px 8px;
+  padding: 6px 16px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sliphead .meta {
+  display: block;
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 44px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sliphead .row {
+  margin: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* A folded text slip fades out at the cut, so the fold reads as
+   "there is more" rather than as the end of the note. The ::after
+   gradient needs a positioned ancestor, hence position: relative. */
+
+.body { position: relative; }
+
+.body.folded {
+  max-height: 13.5em;
+  overflow: hidden;
+}
+
+.body.folded::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3em;
+  background: linear-gradient(rgba(250, 247, 242, 0), var(--sheet));
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .body.folded::after {
+  background: linear-gradient(rgba(36, 33, 29, 0), var(--sheet));
+}
+
 .body {
   margin: 0;
   white-space: pre-wrap;

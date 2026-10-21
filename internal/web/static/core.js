@@ -686,6 +686,7 @@
   var textCap = 200 * 1024;
   var previewCap = 256 * 1024;
   var undoMillis = 8e3;
+  var textFoldLines = 12;
   function start(page, node) {
     var state = {
       view: "loading",
@@ -701,6 +702,7 @@
       draft: "",
       query: "",
       openPreview: {},
+      openText: {},
       editing: "",
       viewer: null,
       previewText: {},
@@ -885,6 +887,7 @@
       state.items = [];
       state.itemsLoaded = false;
       state.openPreview = {};
+      state.openText = {};
       state.previewText = {};
       state.confirmClear = false;
       route();
@@ -1387,52 +1390,11 @@
         parts.push(t("edited"));
       return parts.join(" · ");
     }
-    function confirmButton(label, confirmLabel, act) {
-      var b = btn(label, function() {
-        if (b.dataset.armed === "1") {
-          act();
-          return;
-        }
-        b.dataset.armed = "1";
-        b.textContent = confirmLabel;
-        b.classList.add("danger");
-        setTimeout(function() {
-          if (!b.isConnected)
-            return;
-          b.dataset.armed = "";
-          b.textContent = label;
-          b.classList.remove("danger");
-        }, 3e3);
-      });
-      return b;
-    }
     function slipNode(it, newest) {
       var id = safeID(it.id);
       var card = el("article", newest ? "slip is-new" : "slip");
-      var meta = el("div", "meta");
-      meta.appendChild(el("span", "", metaText(it)));
-      card.appendChild(meta);
-      if (it.kind === "text" && state.editing === id) {
-        card.appendChild(textEditor(it, id));
-      } else if (it.kind === "text") {
-        card.appendChild(el("pre", "body", it.text || ""));
-      } else if (it.kind === "image" && it.hasThumb && id) {
-        var img = el("img", "shot");
-        img.alt = it.name || t("imageKind");
-        img.src = "/api/items/" + id + "/thumb";
-        img.addEventListener("click", function() {
-          openViewer(it, id);
-        });
-        card.appendChild(img);
-      } else {
-        var nameRow = el("p", "fname", it.name || t("fileKind"));
-        card.appendChild(nameRow);
-        if (id && previewable(it)) {
-          var pv = previewBody(it, id);
-          if (pv)
-            card.appendChild(pv);
-        }
-      }
+      var head = el("div", "sliphead");
+      head.appendChild(el("span", "meta", metaText(it)));
       var row = el("div", "row");
       if (it.kind === "text") {
         var copy_1 = btn(t("copy"), function() {
@@ -1440,7 +1402,7 @@
         }, "textbtn");
         row.appendChild(copy_1);
       }
-      if (id && previewable(it)) {
+      if (it.kind !== "text" && id && previewable(it)) {
         var open_1 = !!state.openPreview[id];
         row.appendChild(btn(open_1 ? t("previewClose") : t("previewOpen"), function() {
           if (state.openPreview[id]) {
@@ -1448,6 +1410,17 @@
           } else {
             state.openPreview[id] = true;
             loadPreview(it, id);
+          }
+          if (state.view === "board")
+            renderBoard();
+        }, "textbtn"));
+      } else if (it.kind === "text" && id && countLines(it.text || "") > textFoldLines) {
+        var open_2 = !!state.openText[id];
+        row.appendChild(btn(open_2 ? t("previewClose") : t("previewOpen"), function() {
+          if (state.openText[id]) {
+            delete state.openText[id];
+          } else {
+            state.openText[id] = true;
           }
           if (state.view === "board")
             renderBoard();
@@ -1467,10 +1440,75 @@
       if (id) {
         row.appendChild(confirmButton(t("remove"), t("confirmRemove"), function() {
           removeItem(id);
-        }));
+        }, "textbtn"));
       }
-      card.appendChild(row);
+      head.appendChild(row);
+      card.appendChild(head);
+      if (it.kind === "text" && state.editing === id) {
+        card.appendChild(textEditor(it, id));
+      } else if (it.kind === "text") {
+        card.appendChild(textBody(it, id));
+      } else if (it.kind === "image" && it.hasThumb && id) {
+        var img = el("img", "shot");
+        img.alt = it.name || t("imageKind");
+        img.src = "/api/items/" + id + "/thumb";
+        img.addEventListener("click", function() {
+          openViewer(it, id);
+        });
+        card.appendChild(img);
+      } else {
+        var nameRow = el("p", "fname", it.name || t("fileKind"));
+        card.appendChild(nameRow);
+        if (id && previewable(it)) {
+          var pv = previewBody(it, id);
+          if (pv)
+            card.appendChild(pv);
+        }
+      }
       return card;
+    }
+    function textBody(it, id) {
+      var body = el("pre", "body", it.text || "");
+      if (countLines(it.text || "") <= textFoldLines)
+        return body;
+      if (state.editing === id)
+        return body;
+      var open = !!state.openText[id];
+      if (!open)
+        body.classList.add("folded");
+      body.setAttribute("aria-expanded", open ? "true" : "false");
+      return body;
+    }
+    function countLines(text) {
+      var lines = text.split("\n");
+      var n = 0;
+      var i;
+      for (i = 0; i < lines.length; i++) {
+        var extra = Math.floor(lines[i].length / 40);
+        n = n + 1 + extra;
+      }
+      return n;
+    }
+    function confirmButton(label, confirmLabel, act, cls) {
+      var b = btn(label, function() {
+        if (b.dataset.armed === "1") {
+          act();
+          return;
+        }
+        b.dataset.armed = "1";
+        b.textContent = confirmLabel;
+        b.classList.add("danger");
+        setTimeout(function() {
+          if (!b.isConnected)
+            return;
+          b.dataset.armed = "";
+          b.textContent = label;
+          b.classList.remove("danger");
+        }, 3e3);
+      });
+      if (cls)
+        b.className = cls;
+      return b;
     }
     function previewBody(it, id) {
       if (!state.openPreview[id])
@@ -1677,6 +1715,7 @@
           return it.id !== id;
         });
         delete state.openPreview[id];
+        delete state.openText[id];
         delete state.previewText[id];
         queueUndo([id]);
         if (state.view === "board")
@@ -1796,6 +1835,7 @@
             state.itemsLoaded = true;
             state.hasMore = false;
             state.openPreview = {};
+            state.openText = {};
             state.previewText = {};
             state.view = "board";
             queueUndo(body.ids || []);
