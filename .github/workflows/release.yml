@@ -172,29 +172,38 @@ jobs:
             'Archives for Linux, macOS, and Windows. SHA256SUMS lists each file. The tag matches the version printed by slip --version. The macOS archive is signed and notarized, so it opens without a Gatekeeper prompt.' \
             'Linux、macOS 和 Windows 的压缩包。SHA256SUMS 是每个文件的校验值。标签和 slip --version 打印的版本一致。macOS 的包已签名并公证，打开时不会出现拦截提示。')
 
-          # Landing on an existing release is the normal case when this job is
-          # re-run or when a tag is pushed twice. Creating unconditionally is
-          # what left v0.2.0 with two release pages carrying the same six
-          # files, so an existing release is updated in place instead.
-          #
-          # Only a 404 counts as "there is no release for this tag yet". Any
-          # other answer stops the job here rather than falling through to
-          # create: mistaking a network or permission error for a missing
-          # release is the other way a duplicate gets made.
-          missing=1
-          if out=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" 2>&1); then
-            missing=0
-          elif ! printf '%s' "$out" | grep -q "404"; then
-            printf 'slip: could not read the release for %s\n%s\n' \
-              "$GITHUB_REF_NAME" "$out" >&2
+          # Moving a tag means deleting it and creating it again, and deleting a
+          # tag demotes the release that was published for it to a draft. A
+          # draft is invisible to /releases/tags/<tag>: that endpoint answers
+          # 404, which reads exactly like "no release yet". Asking by tag is
+          # therefore how every retag produced a second release page. The list
+          # endpoint does include drafts, so ask the list instead.
+          rows=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
+            --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\") | \"\(.id) \(.draft)\"") || {
+            echo "slip: could not list releases for $GITHUB_REF_NAME" >&2
             exit 1
-          fi
+          }
 
-          if [ "$missing" = "0" ]; then
+          # Newest first. Whatever comes after the first row is a leftover:
+          # drafts are removed without asking, because nobody can see them and
+          # they are the debris this pipeline itself leaves behind. A second
+          # published release is different, so the job stops and says so rather
+          # than deleting something a person may have meant to keep.
+          keep=$(printf '%s\n' "$rows" | awk 'NF { print $1; exit }')
+          while read -r id draft; do
+            if [ "$draft" = "true" ]; then
+              echo "slip: removing leftover draft release $id" >&2
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/$id" >/dev/null
+            else
+              echo "slip: $GITHUB_REF_NAME has two published releases, $keep and $id" >&2
+              exit 1
+            fi
+          done < <(printf '%s\n' "$rows" | awk 'NF' | tail -n +2)
+
+          if [ -n "$keep" ]; then
+            # Assets first, then the draft flag, so a draft never goes public
+            # without the files it is supposed to carry.
             gh release upload "$GITHUB_REF_NAME" dist/* --clobber
-            # --draft=false matters: a run interrupted during publishing leaves
-            # the release behind as a draft, which then sits next to the good
-            # one and looks like a duplicate to anyone reading the page.
             gh release edit "$GITHUB_REF_NAME" \
               --draft=false \
               --title "slip ${GITHUB_REF_NAME#v}" \
