@@ -161,6 +161,11 @@ jobs:
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job never checks out the repository, so gh has no git remote
+          # to infer the repository from and every release command without an
+          # explicit --repo fails with "not a git repository". Naming the
+          # repository once here covers all of them.
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           notes=$(printf '%s\n\n%s\n' \
@@ -171,7 +176,21 @@ jobs:
           # re-run or when a tag is pushed twice. Creating unconditionally is
           # what left v0.2.0 with two release pages carrying the same six
           # files, so an existing release is updated in place instead.
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          #
+          # Only a 404 counts as "there is no release for this tag yet". Any
+          # other answer stops the job here rather than falling through to
+          # create: mistaking a network or permission error for a missing
+          # release is the other way a duplicate gets made.
+          missing=1
+          if out=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" 2>&1); then
+            missing=0
+          elif ! printf '%s' "$out" | grep -q "404"; then
+            printf 'slip: could not read the release for %s\n%s\n' \
+              "$GITHUB_REF_NAME" "$out" >&2
+            exit 1
+          fi
+
+          if [ "$missing" = "0" ]; then
             gh release upload "$GITHUB_REF_NAME" dist/* --clobber
             # --draft=false matters: a run interrupted during publishing leaves
             # the release behind as a draft, which then sits next to the good
