@@ -186,6 +186,21 @@ textarea {
   border-bottom: 1px solid var(--line);
 }
 
+/* The kind tag leads the header. It borrows the seal's red so the
+   type of a slip reads at a glance, before the grey time and size. */
+
+.kindtag {
+  flex: none;
+  align-self: center;
+  background: var(--seal);
+  color: var(--seal-ink);
+  border-radius: 2px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 6px;
+  letter-spacing: 0.08em;
+}
+
 .sliphead .meta {
   display: block;
   margin: 0;
@@ -195,6 +210,8 @@ textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 
 .sliphead .row {

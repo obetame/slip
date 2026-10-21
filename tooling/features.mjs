@@ -164,9 +164,9 @@ check("dragleave hides the overlay", !!zone && zone.hidden === true, zone ? "hid
 
 console.log("text preview");
 // The toggle lives in the file slip's action row. Pick the one whose label
-// matches Open in either language.
+// matches Preview in either language.
 const btn = Array.from(p.doc.querySelectorAll(".slip .row button")).find(
-  (b) => b.textContent === "Open" || b.textContent === "\u5c55\u5f00",
+  (b) => b.textContent === "Preview" || b.textContent === "\u9884\u89c8",
 );
 check("text attachment has a preview button", !!btn);
 if (btn) {

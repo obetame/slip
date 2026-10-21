@@ -820,7 +820,6 @@ export function start(page: Page, node: Node): void {
     const parts: string[] = [];
     const when = formatTime(it.createdAt);
     if (when) parts.push(when);
-    parts.push(kindLabel(it.kind));
     if (it.size) parts.push(formatBytes(it.size));
     if (it.editedAt) parts.push(t("edited"));
     return parts.join(" · ");
@@ -836,8 +835,12 @@ export function start(page: Page, node: Node): void {
     // The header holds the time on the left and the actions on the
     // right. It sticks to the viewport top while its card is on
     // screen, so a long slip can be closed or deleted without
-    // scrolling back to where the card began.
+    // scrolling back to where the card began. The kind leads the
+    // header as a small seal, because "text, picture, or file" is the
+    // first thing a person scans for.
     const head = el("div", "sliphead");
+    const kindTag = el("span", "kindtag", kindLabel(it.kind));
+    head.appendChild(kindTag);
     head.appendChild(el("span", "meta", metaText(it)));
     const row = el("div", "row");
     if (it.kind === "text") {
@@ -848,10 +851,12 @@ export function start(page: Page, node: Node): void {
     }
     if (it.kind !== "text" && id && previewable(it)) {
       // The toggle sits with the other actions, not under the file name,
-      // so every operation on a slip is in one place.
+      // so every operation on a slip is in one place. A file reads
+      // "Preview" because it opens a viewer; a long text slip reads
+      // "Open" because it unfolds in place.
       const open = !!state.openPreview[id];
       row.appendChild(
-        btn(open ? t("previewClose") : t("previewOpen"), function () {
+        btn(open ? t("previewClose") : t("previewFileOpen"), function () {
           if (state.openPreview[id]) {
             delete state.openPreview[id];
           } else {
@@ -861,7 +866,7 @@ export function start(page: Page, node: Node): void {
           if (state.view === "board") renderBoard();
         }, "textbtn")
       );
-    } else if (it.kind === "text" && id && countLines(it.text || "") > textFoldLines) {
+    } else if (it.kind === "text" && id && state.editing !== id && countLines(it.text || "") > textFoldLines) {
       // The same toggle folds a long text slip back up. Only a slip
       // that starts folded gets one, so the row is not crowded with a
       // control that would do nothing.

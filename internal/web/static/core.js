@@ -72,6 +72,7 @@
       clearSearch: "清除",
       previewOpen: "展开",
       previewClose: "收起",
+      previewFileOpen: "预览",
       previewLoading: "正在读取",
       previewTooBig: "文件太大，不能在这里展开。",
       previewFailed: "读不出来，请下载。",
@@ -156,6 +157,7 @@
       clearSearch: "Clear",
       previewOpen: "Open",
       previewClose: "Close",
+      previewFileOpen: "Preview",
       previewLoading: "Reading",
       previewTooBig: "Too large to open here.",
       previewFailed: "Could not read it. Try Download.",
@@ -1383,7 +1385,6 @@
       var when = formatTime(it.createdAt);
       if (when)
         parts.push(when);
-      parts.push(kindLabel(it.kind));
       if (it.size)
         parts.push(formatBytes(it.size));
       if (it.editedAt)
@@ -1394,6 +1395,8 @@
       var id = safeID(it.id);
       var card = el("article", newest ? "slip is-new" : "slip");
       var head = el("div", "sliphead");
+      var kindTag = el("span", "kindtag", kindLabel(it.kind));
+      head.appendChild(kindTag);
       head.appendChild(el("span", "meta", metaText(it)));
       var row = el("div", "row");
       if (it.kind === "text") {
@@ -1404,7 +1407,7 @@
       }
       if (it.kind !== "text" && id && previewable(it)) {
         var open_1 = !!state.openPreview[id];
-        row.appendChild(btn(open_1 ? t("previewClose") : t("previewOpen"), function() {
+        row.appendChild(btn(open_1 ? t("previewClose") : t("previewFileOpen"), function() {
           if (state.openPreview[id]) {
             delete state.openPreview[id];
           } else {
@@ -1414,7 +1417,7 @@
           if (state.view === "board")
             renderBoard();
         }, "textbtn"));
-      } else if (it.kind === "text" && id && countLines(it.text || "") > textFoldLines) {
+      } else if (it.kind === "text" && id && state.editing !== id && countLines(it.text || "") > textFoldLines) {
         var open_2 = !!state.openText[id];
         row.appendChild(btn(open_2 ? t("previewClose") : t("previewOpen"), function() {
           if (state.openText[id]) {
