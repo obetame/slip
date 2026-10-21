@@ -17,6 +17,7 @@
       view: "查看",
       download: "下载",
       remove: "删除",
+      more: "更多",
       empty: "放下的内容会出现在这里。",
       loginLead: "输入家里口令。",
       passphrase: "家里口令",
@@ -107,6 +108,7 @@
       view: "View",
       download: "Download",
       remove: "Delete",
+      more: "More",
       empty: "What you put down will show up here.",
       loginLead: "Enter the household passphrase.",
       passphrase: "Household passphrase",
@@ -862,9 +864,6 @@
       }
       if (state.view === "board") {
         node.nav.appendChild(btn(t("refresh"), refresh));
-        node.nav.appendChild(btn(layoutChoice() === "grid" ? t("layoutList") : t("layoutGrid"), function() {
-          setLayout(layoutChoice() === "grid" ? "list" : "grid");
-        }));
       }
       var theme = themeNow();
       node.nav.appendChild(btn(theme === "dark" ? t("themeLight") : t("themeDark"), function() {
@@ -1126,24 +1125,37 @@
         return false;
       });
     }
-    function kindBar() {
+    function controlsBar() {
       var row = el("div", "kindbar");
-      var kinds = ["", "text", "image", "file"];
-      kinds.forEach(function(k) {
-        var n = k ? state.items.filter(function(it) {
+      var present = ["text", "image", "file"].filter(function(k) {
+        return state.items.some(function(it) {
           return it.kind === k;
-        }).length : state.items.length;
-        if (k && !n && state.kindFilter !== k)
-          return;
-        var label = (k ? kindLabel(k) : t("kindAll")) + " " + n;
-        var b = btn(label, function() {
-          state.kindFilter = state.kindFilter === k ? "" : k;
-          if (state.view === "board")
-            renderBoard();
-        }, state.kindFilter === k ? "kindbtn is-on" : "kindbtn");
-        b.setAttribute("aria-pressed", state.kindFilter === k ? "true" : "false");
-        row.appendChild(b);
+        });
       });
+      if (state.kindFilter && present.indexOf(state.kindFilter) === -1)
+        present.push(state.kindFilter);
+      if (present.length > 1 || state.kindFilter) {
+        var kinds = [""].concat(present);
+        kinds.forEach(function(k) {
+          var n = k ? state.items.filter(function(it) {
+            return it.kind === k;
+          }).length : state.items.length;
+          var label = (k ? kindLabel(k) : t("kindAll")) + " " + n;
+          var b = btn(label, function() {
+            state.kindFilter = state.kindFilter === k ? "" : k;
+            if (state.view === "board")
+              renderBoard();
+          }, state.kindFilter === k ? "kindbtn is-on" : "kindbtn");
+          b.setAttribute("aria-pressed", state.kindFilter === k ? "true" : "false");
+          row.appendChild(b);
+        });
+      }
+      var grid = layoutChoice() === "grid";
+      var swap = btn((grid ? "☰ " : "▦ ") + (grid ? t("layoutList") : t("layoutGrid")), function() {
+        setLayout(grid ? "list" : "grid");
+      }, "textbtn layoutbtn");
+      swap.setAttribute("aria-label", grid ? t("layoutList") : t("layoutGrid"));
+      row.appendChild(swap);
       return row;
     }
     function layoutChoice() {
@@ -1151,7 +1163,6 @@
     }
     function setLayout(next) {
       storeSet("slip.layout", next);
-      paintNav();
       if (state.view === "board")
         renderBoard();
     }
@@ -1171,12 +1182,7 @@
         shareHint();
         return;
       }
-      var kinds = state.items.reduce(function(set, it) {
-        set[it.kind] = true;
-        return set;
-      }, {});
-      if (Object.keys(kinds).length > 1 || state.kindFilter)
-        node.main.appendChild(kindBar());
+      node.main.appendChild(controlsBar());
       var shown = visibleItems();
       if (!shown.length) {
         node.main.appendChild(el("p", "hint", state.kindFilter && !state.query.trim() ? t("kindEmpty") : t("searchEmpty")));
@@ -1232,7 +1238,7 @@
           tile.appendChild(el("p", "tilecap", cap));
         return tile;
       }
-      tile.appendChild(slipNode(it, false));
+      tile.appendChild(slipNode(it, false, true));
       return tile;
     }
     function dayKeyOf(it) {
@@ -1583,35 +1589,65 @@
         return "▤ ";
       return "❏ ";
     }
-    function metaText(it) {
+    function metaText(it, short) {
       var parts = [];
       var when = formatTime(it.createdAt);
       if (when)
         parts.push(when);
-      if (it.size)
+      if (it.size && !short)
         parts.push(formatBytes(it.size));
       if (it.editedAt)
         parts.push(t("edited"));
       return parts.join(" · ");
     }
-    function slipNode(it, newest) {
+    function narrowScreen() {
+      return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches;
+    }
+    function actionRow(actions, onMenu, compact) {
+      var row = el("div", "row");
+      var inline2 = compact ? false : actions.length <= 2 || !narrowScreen();
+      if (inline2) {
+        actions.forEach(function(a) {
+          row.appendChild(a);
+        });
+        return row;
+      }
+      if (!compact)
+        row.appendChild(actions[0]);
+      var more = el("details", "actmore");
+      more.appendChild(el("summary", "textbtn", t("more")));
+      var menu = el("div", "menu");
+      (compact ? actions : actions.slice(1)).forEach(function(a) {
+        menu.appendChild(a);
+      });
+      more.appendChild(menu);
+      more.addEventListener("toggle", function() {
+        onMenu(more.hasAttribute("open"));
+      });
+      row.appendChild(more);
+      return row;
+    }
+    function slipNode(it, newest, compact) {
       var id = safeID(it.id);
       var card = el("article", newest ? "slip is-new" : "slip");
       card.setAttribute("data-kind", it.kind);
       var head = el("div", "sliphead");
-      var kindTag = el("span", "kindtag", kindGlyph(it.kind) + kindLabel(it.kind));
+      var glyph = compact ? kindGlyph(it.kind).replace(" ", "") : kindGlyph(it.kind) + kindLabel(it.kind);
+      var kindTag = el("span", "kindtag", glyph);
+      if (compact)
+        kindTag.setAttribute("title", kindLabel(it.kind));
       head.appendChild(kindTag);
-      head.appendChild(el("span", "meta", metaText(it)));
-      var row = el("div", "row");
+      head.appendChild(el("span", "meta", metaText(it, compact)));
+      var actions = [];
       if (it.kind === "text") {
         var copy_1 = btn(t("copy"), function() {
           copyButtonText(it.text || "", copy_1);
         }, "textbtn");
-        row.appendChild(copy_1);
+        actions.push(copy_1);
       }
       if (it.kind !== "text" && id && previewable(it)) {
         var open_1 = !!state.openPreview[id];
-        row.appendChild(btn(open_1 ? t("previewClose") : t("previewFileOpen"), function() {
+        actions.push(btn(open_1 ? t("previewClose") : t("previewFileOpen"), function() {
           if (state.openPreview[id]) {
             delete state.openPreview[id];
           } else {
@@ -1623,7 +1659,7 @@
         }, "textbtn"));
       } else if (it.kind === "text" && id && state.editing !== id && countLines(it.text || "") > textFoldLines) {
         var open_2 = !!state.openText[id];
-        row.appendChild(btn(open_2 ? t("previewClose") : t("previewOpen"), function() {
+        actions.push(btn(open_2 ? t("previewClose") : t("previewOpen"), function() {
           if (state.openText[id]) {
             delete state.openText[id];
           } else {
@@ -1634,22 +1670,28 @@
         }, "textbtn"));
       }
       if (it.kind === "text" && id && state.editing !== id) {
-        row.appendChild(btn(t("edit"), function() {
+        actions.push(btn(t("edit"), function() {
           state.editing = id;
           if (state.view === "board")
             renderBoard();
         }, "textbtn"));
       }
       if (id && page.canPreview(it))
-        row.appendChild(fileLink(t("view"), "/api/items/" + id + "/raw"));
+        actions.push(fileLink(t("view"), "/api/items/" + id + "/raw"));
       if (id && it.kind !== "text")
-        row.appendChild(fileLink(t("download"), "/api/items/" + id + "/raw?dl=1"));
+        actions.push(fileLink(t("download"), "/api/items/" + id + "/raw?dl=1"));
       if (id) {
-        row.appendChild(confirmButton(t("remove"), t("confirmRemove"), function() {
+        actions.push(confirmButton(t("remove"), t("confirmRemove"), function() {
           removeItem(id);
         }, "textbtn"));
       }
-      head.appendChild(row);
+      head.appendChild(actionRow(actions, function(open) {
+        if (open) {
+          card.classList.add("is-menu");
+        } else {
+          card.classList.remove("is-menu");
+        }
+      }, compact));
       card.appendChild(head);
       if (it.kind === "text" && state.editing === id) {
         card.appendChild(textEditor(it, id));
@@ -2101,8 +2143,21 @@
       node.main.appendChild(danger);
       node.main.appendChild(el("p", "hint", t("version") + " " + (boot.version || "")));
     }
+    function closeMenus() {
+      document.addEventListener("click", function(e) {
+        var target = e.target;
+        var open = document.querySelectorAll("details.actmore[open]");
+        var i;
+        for (i = 0; i < open.length; i++) {
+          var at = open[i];
+          if (!at.contains(target))
+            at.removeAttribute("open");
+        }
+      });
+    }
     installDragHandlers();
     installKeys();
+    closeMenus();
     applyChrome();
     paintNav();
     api("/api/bootstrap").then(function(boot) {

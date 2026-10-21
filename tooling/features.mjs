@@ -81,6 +81,20 @@ async function page(cookie, opts = {}) {
   // The saved layout is read during the first render, so it has to be in
   // place before the bundles run.
   if (opts.layout) w.localStorage.setItem("slip.layout", opts.layout);
+  // jsdom has no media queries. A narrow window is the one the tests
+  // need to imitate, because it is what folds the header actions away.
+  if (opts.narrow) {
+    w.matchMedia = (q) => ({
+      matches: true,
+      media: q,
+      onchange: null,
+      addListener() {},
+      removeListener() {},
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent: () => false,
+    });
+  }
   const sent = [];
   // Patch the prototype rather than replacing the constructor: a replaced
   // constructor that returns another object breaks `instanceof`, and older
@@ -366,16 +380,46 @@ console.log("grid layout");
   check("every slip becomes a tile", tiles.length > 0 && empty.length === 0, "tiles=" + tiles.length + " empty=" + empty.length);
   check("text slips join the wall", !!g.doc.querySelector(".wall .tile .body"));
   check("grid drops the day separators", !g.doc.querySelector(".daysep"));
+  const tileRows = Array.from(g.doc.querySelectorAll(".wall .tile .sliphead .row"));
+  check(
+    "a tile header keeps only More",
+    tileRows.length > 0 && tileRows.every((r) => r.children.length === 1 && !!r.querySelector("details.actmore")),
+    tileRows.map((r) => Array.from(r.children).map((c) => c.tagName).join("+")).join(" | "),
+  );
 
-  const toList = Array.from(g.doc.querySelectorAll(".nav button")).find((b) => b.textContent === "\u5217\u8868" || b.textContent === "List");
-  check("the nav names the layout a tap switches to", !!toList, g.doc.querySelector(".nav").textContent);
+  // The layout switch lives at the end of the kind filter row, not in
+  // the page nav: that row is about how the board is shown.
+  const bar = g.doc.querySelector(".kindbar");
+  check("the board has one control row", !!bar);
+  const toList = bar && Array.from(bar.querySelectorAll("button")).find((b) => /\u5217\u8868|List/.test(b.textContent));
+  check("the layout switch sits in the control row", !!toList, bar ? bar.textContent : "no .kindbar");
+  check("the nav keeps only page-level switches", !/[\u7f51\u683c\u5217\u8868]|Grid|List/.test((g.doc.querySelector(".nav") || {}).textContent || ""), (g.doc.querySelector(".nav") || {}).textContent);
   if (toList) {
     toList.dispatchEvent(new g.w.Event("click", { bubbles: true }));
     await settle(400);
     check("the toggle returns to the list", !g.doc.querySelector(".wall") && !!g.doc.querySelector(".slip"));
-    const toGrid = Array.from(g.doc.querySelectorAll(".nav button")).find((b) => b.textContent === "\u7f51\u683c" || b.textContent === "Grid");
-    check("the label flips with the layout", !!toGrid, g.doc.querySelector(".nav").textContent);
+    const toGrid = Array.from(g.doc.querySelectorAll(".kindbar button")).find((b) => /\u7f51\u683c|Grid/.test(b.textContent));
+    check("the label flips with the layout", !!toGrid, (g.doc.querySelector(".kindbar") || {}).textContent);
   }
+}
+
+console.log("narrow header");
+{
+  // A phone has room for one action and More. Everything else moves
+  // into the menu, which must still contain the delete button.
+  const n = await page(cookie, { narrow: true });
+  const heads = Array.from(n.doc.querySelectorAll(".sliphead"));
+  const folded = heads.find((h) => h.querySelector("details.actmore"));
+  check("a narrow header folds extra actions into More", !!folded, heads.map((h) => h.textContent).join(" | "));
+  if (folded) {
+    const row = folded.querySelector(".row");
+    check("the row keeps one action beside More", row.children.length === 2, "children=" + row.children.length);
+    const menu = folded.querySelector(".actmore .menu");
+    check("the menu holds the rest of the actions", menu && menu.children.length >= 1, menu ? "items=" + menu.children.length : "no menu");
+    check("delete is still reachable from the menu", !!menu && /\u5220\u9664|Delete/.test(menu.textContent), menu && menu.textContent);
+  }
+  const plain = heads.find((h) => !h.querySelector("details.actmore"));
+  check("a short header stays unfolded", !plain || plain.querySelectorAll(".row > *").length <= 2);
 }
 
 console.log("keyboard");

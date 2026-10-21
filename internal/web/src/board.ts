@@ -238,14 +238,6 @@ export function start(page: Page, node: Node): void {
     }
     if (state.view === "board") {
       node.nav.appendChild(btn(t("refresh"), refresh));
-      // The layout toggle lives in the top nav, beside refresh, where
-      // the other whole-page switches are. The label always names the
-      // layout the tap will switch TO.
-      node.nav.appendChild(
-        btn(layoutChoice() === "grid" ? t("layoutList") : t("layoutGrid"), function () {
-          setLayout(layoutChoice() === "grid" ? "list" : "grid");
-        })
-      );
     }
     const theme = themeNow();
     node.nav.appendChild(
@@ -536,25 +528,50 @@ export function start(page: Page, node: Node): void {
     });
   }
 
-  // kindBar sits beside the search field. It narrows the board by slip
-  // kind; the counts make an empty choice visible before it is made.
-  // The bar only renders when a filter or a search is active or the
-  // board has more than one kind, so a board of nothing but notes does
-  // not grow a control nobody needs.
-  function kindBar(): HTMLElement {
+  // controlsBar is the row under the search field: kind chips on the
+  // left, the layout switch on the right. The chips only appear when
+  // there is a choice to make, but the row itself stays while the
+  // board has slips, because the layout switch needs a home the person
+  // can find. It belongs here rather than in the top nav: that row is
+  // page-level (refresh, theme, language, settings), while this row
+  // already changes how the board is shown.
+  function controlsBar(): HTMLElement {
     const row = el("div", "kindbar");
-    const kinds = ["", "text", "image", "file"];
-    kinds.forEach(function (k) {
-      const n = k ? state.items.filter(function (it) { return it.kind === k; }).length : state.items.length;
-      if (k && !n && state.kindFilter !== k) return;
-      const label = (k ? kindLabel(k) : t("kindAll")) + " " + n;
-      const b = btn(label, function () {
-        state.kindFilter = state.kindFilter === k ? "" : k;
-        if (state.view === "board") renderBoard();
-      }, state.kindFilter === k ? "kindbtn is-on" : "kindbtn");
-      b.setAttribute("aria-pressed", state.kindFilter === k ? "true" : "false");
-      row.appendChild(b);
+    const present = ["text", "image", "file"].filter(function (k) {
+      return state.items.some(function (it) {
+        return it.kind === k;
+      });
     });
+    // An active filter keeps its chip even when the last slip of that
+    // kind is gone, otherwise the only way to clear the filter would
+    // disappear with it.
+    if (state.kindFilter && present.indexOf(state.kindFilter) === -1) present.push(state.kindFilter);
+    if (present.length > 1 || state.kindFilter) {
+      const kinds = [""].concat(present);
+      kinds.forEach(function (k) {
+        const n = k ? state.items.filter(function (it) { return it.kind === k; }).length : state.items.length;
+        const label = (k ? kindLabel(k) : t("kindAll")) + " " + n;
+        const b = btn(label, function () {
+          state.kindFilter = state.kindFilter === k ? "" : k;
+          if (state.view === "board") renderBoard();
+        }, state.kindFilter === k ? "kindbtn is-on" : "kindbtn");
+        b.setAttribute("aria-pressed", state.kindFilter === k ? "true" : "false");
+        row.appendChild(b);
+      });
+    }
+    // The label names the layout a tap switches to, so the icon is the
+    // shape of what is coming: stacked lines for the list, a filled
+    // square for the wall.
+    const grid = layoutChoice() === "grid";
+    const swap = btn(
+      (grid ? "\u2630 " : "\u25A6 ") + (grid ? t("layoutList") : t("layoutGrid")),
+      function () {
+        setLayout(grid ? "list" : "grid");
+      },
+      "textbtn layoutbtn"
+    );
+    swap.setAttribute("aria-label", grid ? t("layoutList") : t("layoutGrid"));
+    row.appendChild(swap);
     return row;
   }
 
@@ -566,9 +583,6 @@ export function start(page: Page, node: Node): void {
 
   function setLayout(next: "list" | "grid"): void {
     storeSet("slip.layout", next);
-    // The nav label names the layout a tap will switch to, so it has
-    // to be repainted with the board.
-    paintNav();
     if (state.view === "board") renderBoard();
   }
 
@@ -576,8 +590,7 @@ export function start(page: Page, node: Node): void {
     clear(node.main);
     node.main.appendChild(composer());
     // The search field is always present once there is something to find,
-    // otherwise there is no way to start a search. The layout toggle is
-    // in the top nav; nothing sits beside the search field.
+    // otherwise there is no way to start a search.
     if (state.items.length || state.query.trim()) node.main.appendChild(searchBar());
     if (!state.itemsLoaded) {
       node.main.appendChild(el("div", "skel"));
@@ -589,11 +602,7 @@ export function start(page: Page, node: Node): void {
       shareHint();
       return;
     }
-    const kinds = state.items.reduce(function (set, it) {
-      set[it.kind] = true;
-      return set;
-    }, {} as { [kind: string]: boolean });
-    if (Object.keys(kinds).length > 1 || state.kindFilter) node.main.appendChild(kindBar());
+    node.main.appendChild(controlsBar());
     const shown = visibleItems();
     if (!shown.length) {
       node.main.appendChild(el("p", "hint", state.kindFilter && !state.query.trim() ? t("kindEmpty") : t("searchEmpty")));
@@ -648,8 +657,8 @@ export function start(page: Page, node: Node): void {
   // gridTile is one card in the wall. A picture is the tile: the thumb
   // fills the width and its own shape gives the column its height, so
   // rows of different heights interlock. Notes and files keep the card
-  // from the list, compacted by the CSS in the wall, so every action
-  // still works without switching back to the list.
+  // from the list, in its compact form: the tile has room for the time
+  // and one More button, and everything else waits in that menu.
   function gridTile(it: Item, newest: boolean): HTMLElement {
     const id = safeID(it.id);
     const tile = el("div", newest ? "tile is-new" : "tile");
@@ -667,7 +676,7 @@ export function start(page: Page, node: Node): void {
       if (cap) tile.appendChild(el("p", "tilecap", cap));
       return tile;
     }
-    tile.appendChild(slipNode(it, false));
+    tile.appendChild(slipNode(it, false, true));
     return tile;
   }
 
@@ -1056,19 +1065,63 @@ export function start(page: Page, node: Node): void {
     return "\u274F ";                        // lower-right pencil
   }
 
-  function metaText(it: Item): string {
+  // metaText is the line in the header: time, then size, then an edit
+  // marker. A tile passes short, because the size is the part worth
+  // dropping when the line has to fit in a quarter of the screen.
+  function metaText(it: Item, short?: boolean): string {
     const parts: string[] = [];
     const when = formatTime(it.createdAt);
     if (when) parts.push(when);
-    if (it.size) parts.push(formatBytes(it.size));
+    if (it.size && !short) parts.push(formatBytes(it.size));
     if (it.editedAt) parts.push(t("edited"));
     return parts.join(" · ");
+  }
+
+  // narrowScreen is the width at which a slip header stops showing
+  // every action. It is a width test rather than a device test, so a
+  // rotated phone and a narrow desktop window behave the same.
+  function narrowScreen(): boolean {
+    return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches;
+  }
+
+  // actionRow lays the actions out beside the time. A phone has no room
+  // for five buttons on one line, so it keeps the first one (the one
+  // that kind is for: copy for a note, preview for a file) and folds
+  // the rest into a More menu. A tile is narrower still, so it folds
+  // every action and shows only More. A wider window shows them all,
+  // because then they fit on the same line as the time.
+  //
+  // onMenu reports the menu opening and closing, so the card can lift
+  // above its neighbours: a sticky header is its own stacking context,
+  // and an open menu would otherwise slide under the next card.
+  function actionRow(actions: HTMLElement[], onMenu: (open: boolean) => void, compact?: boolean): HTMLElement {
+    const row = el("div", "row");
+    const inline = compact ? false : actions.length <= 2 || !narrowScreen();
+    if (inline) {
+      actions.forEach(function (a) {
+        row.appendChild(a);
+      });
+      return row;
+    }
+    if (!compact) row.appendChild(actions[0]);
+    const more = el("details", "actmore");
+    more.appendChild(el("summary", "textbtn", t("more")));
+    const menu = el("div", "menu");
+    (compact ? actions : actions.slice(1)).forEach(function (a) {
+      menu.appendChild(a);
+    });
+    more.appendChild(menu);
+    more.addEventListener("toggle", function () {
+      onMenu(more.hasAttribute("open"));
+    });
+    row.appendChild(more);
+    return row;
   }
 
   // confirmButton asks twice for anything hard to take back. The first
   // click arms the button, the second click acts. Arming is forgotten on
   // the next render, so nothing stays armed for long.
-  function slipNode(it: Item, newest: boolean): HTMLElement {
+  function slipNode(it: Item, newest: boolean, compact?: boolean): HTMLElement {
     const id = safeID(it.id);
     const card = el("article", newest ? "slip is-new" : "slip");
     // The kind drives the tag colour in the CSS; data-kind keeps that
@@ -1080,17 +1133,22 @@ export function start(page: Page, node: Node): void {
     // screen, so a long slip can be closed or deleted without
     // scrolling back to where the card began. The kind leads the
     // header as a small seal, because "text, picture, or file" is the
-    // first thing a person scans for.
+    // first thing a person scans for. A tile is narrow enough that the
+    // seal keeps only its glyph, with the words left to the tooltip.
     const head = el("div", "sliphead");
-    const kindTag = el("span", "kindtag", kindGlyph(it.kind) + kindLabel(it.kind));
+    const glyph = compact ? kindGlyph(it.kind).replace(" ", "") : kindGlyph(it.kind) + kindLabel(it.kind);
+    const kindTag = el("span", "kindtag", glyph);
+    if (compact) kindTag.setAttribute("title", kindLabel(it.kind));
     head.appendChild(kindTag);
-    head.appendChild(el("span", "meta", metaText(it)));
-    const row = el("div", "row");
+    head.appendChild(el("span", "meta", metaText(it, compact)));
+    // Every action is built first and laid out afterwards, because the
+    // header decides how many of them fit beside the time.
+    const actions: HTMLElement[] = [];
     if (it.kind === "text") {
       const copy = btn(t("copy"), function () {
         copyButtonText(it.text || "", copy);
       }, "textbtn");
-      row.appendChild(copy);
+      actions.push(copy);
     }
     if (it.kind !== "text" && id && previewable(it)) {
       // The toggle sits with the other actions, not under the file name,
@@ -1098,7 +1156,7 @@ export function start(page: Page, node: Node): void {
       // "Preview" because it opens a viewer; a long text slip reads
       // "Open" because it unfolds in place.
       const open = !!state.openPreview[id];
-      row.appendChild(
+      actions.push(
         btn(open ? t("previewClose") : t("previewFileOpen"), function () {
           if (state.openPreview[id]) {
             delete state.openPreview[id];
@@ -1114,7 +1172,7 @@ export function start(page: Page, node: Node): void {
       // that starts folded gets one, so the row is not crowded with a
       // control that would do nothing.
       const open = !!state.openText[id];
-      row.appendChild(
+      actions.push(
         btn(open ? t("previewClose") : t("previewOpen"), function () {
           if (state.openText[id]) {
             delete state.openText[id];
@@ -1126,23 +1184,29 @@ export function start(page: Page, node: Node): void {
       );
     }
     if (it.kind === "text" && id && state.editing !== id) {
-      row.appendChild(
+      actions.push(
         btn(t("edit"), function () {
           state.editing = id;
           if (state.view === "board") renderBoard();
         }, "textbtn")
       );
     }
-    if (id && page.canPreview(it)) row.appendChild(fileLink(t("view"), "/api/items/" + id + "/raw"));
-    if (id && it.kind !== "text") row.appendChild(fileLink(t("download"), "/api/items/" + id + "/raw?dl=1"));
+    if (id && page.canPreview(it)) actions.push(fileLink(t("view"), "/api/items/" + id + "/raw"));
+    if (id && it.kind !== "text") actions.push(fileLink(t("download"), "/api/items/" + id + "/raw?dl=1"));
     if (id) {
       // The class matters: without it this button keeps the browser's
       // default chrome while every neighbour is a quiet text button.
-      row.appendChild(confirmButton(t("remove"), t("confirmRemove"), function () {
+      actions.push(confirmButton(t("remove"), t("confirmRemove"), function () {
         removeItem(id);
       }, "textbtn"));
     }
-    head.appendChild(row);
+    head.appendChild(actionRow(actions, function (open) {
+      if (open) {
+        card.classList.add("is-menu");
+      } else {
+        card.classList.remove("is-menu");
+      }
+    }, compact));
     card.appendChild(head);
 
     if (it.kind === "text" && state.editing === id) {
@@ -1633,10 +1697,26 @@ export function start(page: Page, node: Node): void {
     node.main.appendChild(el("p", "hint", t("version") + " " + (boot.version || "")));
   }
 
+  // closeMenus runs once. A More menu is a <details>, so it opens and
+  // closes without JavaScript; this only closes it when the tap lands
+  // somewhere else, which is what people expect from a menu.
+  function closeMenus(): void {
+    document.addEventListener("click", function (e) {
+      const target = e.target as HTMLElement;
+      const open = document.querySelectorAll("details.actmore[open]");
+      let i;
+      for (i = 0; i < open.length; i++) {
+        const at = open[i] as HTMLElement;
+        if (!at.contains(target)) at.removeAttribute("open");
+      }
+    });
+  }
+
   // ---- boot ---------------------------------------------------------
 
   installDragHandlers();
   installKeys();
+  closeMenus();
   applyChrome();
   paintNav();
   api<Bootstrap>("/api/bootstrap")
