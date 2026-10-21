@@ -8,6 +8,18 @@ on:
 permissions:
   contents: write
 
+# A tag can be pushed more than once: retagging a release means deleting the
+# tag and creating it again, and the second push starts a whole second
+# pipeline while the first is still waiting on Apple. Both of them then try to
+# publish the same tag, which is how v0.2.0 ended up with two release pages
+# carrying the same six files.
+#
+# Only the newest push to a tag is worth finishing, so the older run is
+# cancelled instead of queued behind it.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: true
+
 # Two builders because notarization needs macOS and its tools only ship
 # there. Linux and Windows archives stay on the cheaper Ubuntu runner; the
 # macOS archive is built, signed, and notarized on macOS so Gatekeeper does
@@ -150,10 +162,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "slip ${GITHUB_REF_NAME#v}" \
-            --notes "$(printf '%s\n\n%s\n' \
-              'Archives for Linux, macOS, and Windows. SHA256SUMS lists each file. The tag matches the version printed by slip --version. The macOS archive is signed and notarized, so it opens without a Gatekeeper prompt.' \
-              'Linux、macOS 和 Windows 的压缩包。SHA256SUMS 是每个文件的校验值。标签和 slip --version 打印的版本一致。macOS 的包已签名并公证，打开时不会出现拦截提示。')" \
-            dist/*
+          set -euo pipefail
+          notes=$(printf '%s\n\n%s\n' \
+            'Archives for Linux, macOS, and Windows. SHA256SUMS lists each file. The tag matches the version printed by slip --version. The macOS archive is signed and notarized, so it opens without a Gatekeeper prompt.' \
+            'Linux、macOS 和 Windows 的压缩包。SHA256SUMS 是每个文件的校验值。标签和 slip --version 打印的版本一致。macOS 的包已签名并公证，打开时不会出现拦截提示。')
+
+          # Landing on an existing release is the normal case when this job is
+          # re-run or when a tag is pushed twice. Creating unconditionally is
+          # what left v0.2.0 with two release pages carrying the same six
+          # files, so an existing release is updated in place instead.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            # --draft=false matters: a run interrupted during publishing leaves
+            # the release behind as a draft, which then sits next to the good
+            # one and looks like a duplicate to anyone reading the page.
+            gh release edit "$GITHUB_REF_NAME" \
+              --draft=false \
+              --title "slip ${GITHUB_REF_NAME#v}" \
+              --notes "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "slip ${GITHUB_REF_NAME#v}" \
+              --notes "$notes" \
+              dist/*
+          fi
