@@ -862,6 +862,9 @@
       }
       if (state.view === "board") {
         node.nav.appendChild(btn(t("refresh"), refresh));
+        node.nav.appendChild(btn(layoutChoice() === "grid" ? t("layoutList") : t("layoutGrid"), function() {
+          setLayout(layoutChoice() === "grid" ? "list" : "grid");
+        }));
       }
       var theme = themeNow();
       node.nav.appendChild(btn(theme === "dark" ? t("themeLight") : t("themeDark"), function() {
@@ -1148,21 +1151,15 @@
     }
     function setLayout(next) {
       storeSet("slip.layout", next);
+      paintNav();
       if (state.view === "board")
         renderBoard();
     }
     function renderBoard() {
       clear(node.main);
       node.main.appendChild(composer());
-      if (state.items.length || state.query.trim()) {
-        var grid_1 = layoutChoice() === "grid";
+      if (state.items.length || state.query.trim())
         node.main.appendChild(searchBar());
-        if (state.items.length) {
-          node.main.appendChild(btn(grid_1 ? t("layoutList") : t("layoutGrid"), function() {
-            setLayout(grid_1 ? "list" : "grid");
-          }, "textbtn layoutbtn"));
-        }
-      }
       if (!state.itemsLoaded) {
         node.main.appendChild(el("div", "skel"));
         if (!state.loading)
@@ -1208,30 +1205,34 @@
     }
     function renderBoardGrid(shown) {
       var wall = el("div", "wall");
-      var rest = [];
-      shown.forEach(function(it) {
-        if (it.kind === "image" && it.hasThumb && safeID(it.id)) {
-          wall.appendChild(gridTile(it));
-        } else {
-          rest.push(it);
-        }
+      var cols = [el("div", "wallcol"), el("div", "wallcol")];
+      var fresh = !state.query.trim() && !state.kindFilter;
+      shown.forEach(function(it, i) {
+        cols[i % 2].appendChild(gridTile(it, i === 0 && fresh));
       });
-      if (wall.childElementCount)
-        node.main.appendChild(wall);
-      rest.forEach(function(it) {
-        node.main.appendChild(slipNode(it, false));
-      });
+      wall.appendChild(cols[0]);
+      wall.appendChild(cols[1]);
+      node.main.appendChild(wall);
     }
-    function gridTile(it) {
-      var tile = el("div", "tile");
-      var img = el("img", "tileimg");
-      img.alt = it.name || t("imageKind");
-      img.loading = "lazy";
-      img.src = "/api/items/" + safeID(it.id) + "/thumb";
-      img.addEventListener("click", function() {
-        openViewer(it, safeID(it.id));
-      });
-      tile.appendChild(img);
+    function gridTile(it, newest) {
+      var id = safeID(it.id);
+      var tile = el("div", newest ? "tile is-new" : "tile");
+      tile.setAttribute("data-kind", it.kind);
+      if (it.kind === "image" && it.hasThumb && id) {
+        var img = el("img", "tileimg");
+        img.alt = it.name || t("imageKind");
+        img.loading = "lazy";
+        img.src = "/api/items/" + id + "/thumb";
+        img.addEventListener("click", function() {
+          openViewer(it, id);
+        });
+        tile.appendChild(img);
+        var cap = metaText(it);
+        if (cap)
+          tile.appendChild(el("p", "tilecap", cap));
+        return tile;
+      }
+      tile.appendChild(slipNode(it, false));
       return tile;
     }
     function dayKeyOf(it) {

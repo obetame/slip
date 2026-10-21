@@ -238,6 +238,14 @@ export function start(page: Page, node: Node): void {
     }
     if (state.view === "board") {
       node.nav.appendChild(btn(t("refresh"), refresh));
+      // The layout toggle lives in the top nav, beside refresh, where
+      // the other whole-page switches are. The label always names the
+      // layout the tap will switch TO.
+      node.nav.appendChild(
+        btn(layoutChoice() === "grid" ? t("layoutList") : t("layoutGrid"), function () {
+          setLayout(layoutChoice() === "grid" ? "list" : "grid");
+        })
+      );
     }
     const theme = themeNow();
     node.nav.appendChild(
@@ -558,6 +566,9 @@ export function start(page: Page, node: Node): void {
 
   function setLayout(next: "list" | "grid"): void {
     storeSet("slip.layout", next);
+    // The nav label names the layout a tap will switch to, so it has
+    // to be repainted with the board.
+    paintNav();
     if (state.view === "board") renderBoard();
   }
 
@@ -565,18 +576,9 @@ export function start(page: Page, node: Node): void {
     clear(node.main);
     node.main.appendChild(composer());
     // The search field is always present once there is something to find,
-    // otherwise there is no way to start a search.
-    if (state.items.length || state.query.trim()) {
-      const grid = layoutChoice() === "grid";
-      node.main.appendChild(searchBar());
-      if (state.items.length) {
-        node.main.appendChild(
-          btn(grid ? t("layoutList") : t("layoutGrid"), function () {
-            setLayout(grid ? "list" : "grid");
-          }, "textbtn layoutbtn")
-        );
-      }
-    }
+    // otherwise there is no way to start a search. The layout toggle is
+    // in the top nav; nothing sits beside the search field.
+    if (state.items.length || state.query.trim()) node.main.appendChild(searchBar());
     if (!state.itemsLoaded) {
       node.main.appendChild(el("div", "skel"));
       if (!state.loading) loadFirst();
@@ -623,35 +625,49 @@ export function start(page: Page, node: Node): void {
     });
   }
 
-  // renderBoardGrid is the picture-wall layout: images become tiles in
-  // a flowing two-column wall, everything else stacks beneath them.
-  // It is opt-in through the header toggle.
+  // renderBoardGrid is the picture-wall layout. Every slip becomes a
+  // tile, dealt alternately into two columns so the newest slip sits
+  // top-left and the eye still reads left to right. Each column is its
+  // own stack, which is what keeps a short note from leaving a hole
+  // under a tall picture the way a single wrapped row would. It is
+  // opt-in through the nav toggle, and only while no search is
+  // narrowing the board, because a search should show every hit in
+  // full rather than clip it to a tile.
   function renderBoardGrid(shown: Item[]): void {
     const wall = el("div", "wall");
-    const rest: Item[] = [];
-    shown.forEach(function (it) {
-      if (it.kind === "image" && it.hasThumb && safeID(it.id)) {
-        wall.appendChild(gridTile(it));
-      } else {
-        rest.push(it);
-      }
+    const cols = [el("div", "wallcol"), el("div", "wallcol")];
+    const fresh = !state.query.trim() && !state.kindFilter;
+    shown.forEach(function (it, i) {
+      cols[i % 2].appendChild(gridTile(it, i === 0 && fresh));
     });
-    if (wall.childElementCount) node.main.appendChild(wall);
-    rest.forEach(function (it) {
-      node.main.appendChild(slipNode(it, false));
-    });
+    wall.appendChild(cols[0]);
+    wall.appendChild(cols[1]);
+    node.main.appendChild(wall);
   }
 
-  function gridTile(it: Item): HTMLElement {
-    const tile = el("div", "tile");
-    const img = el("img", "tileimg") as HTMLImageElement;
-    img.alt = it.name || t("imageKind");
-    img.loading = "lazy";
-    img.src = "/api/items/" + safeID(it.id) + "/thumb";
-    img.addEventListener("click", function () {
-      openViewer(it, safeID(it.id));
-    });
-    tile.appendChild(img);
+  // gridTile is one card in the wall. A picture is the tile: the thumb
+  // fills the width and its own shape gives the column its height, so
+  // rows of different heights interlock. Notes and files keep the card
+  // from the list, compacted by the CSS in the wall, so every action
+  // still works without switching back to the list.
+  function gridTile(it: Item, newest: boolean): HTMLElement {
+    const id = safeID(it.id);
+    const tile = el("div", newest ? "tile is-new" : "tile");
+    tile.setAttribute("data-kind", it.kind);
+    if (it.kind === "image" && it.hasThumb && id) {
+      const img = el("img", "tileimg") as HTMLImageElement;
+      img.alt = it.name || t("imageKind");
+      img.loading = "lazy";
+      img.src = "/api/items/" + id + "/thumb";
+      img.addEventListener("click", function () {
+        openViewer(it, id);
+      });
+      tile.appendChild(img);
+      const cap = metaText(it);
+      if (cap) tile.appendChild(el("p", "tilecap", cap));
+      return tile;
+    }
+    tile.appendChild(slipNode(it, false));
     return tile;
   }
 

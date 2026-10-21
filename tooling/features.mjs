@@ -71,13 +71,16 @@ const PNG_8X8 = (() => {
 })();
 
 
-async function page(cookie) {
+async function page(cookie, opts = {}) {
   const html = readFileSync(join(staticDir, "index.html"), "utf8").replace(/\{\{version\}\}/g, "t");
   const vc = new VirtualConsole();
   const errs = [];
   vc.on("jsdomError", (e) => errs.push(String(e.message || e)));
   const dom = new JSDOM(html, { url: base + "/", runScripts: "outside-only", virtualConsole: vc, pretendToBeVisual: true });
   const w = dom.window;
+  // The saved layout is read during the first render, so it has to be in
+  // place before the bundles run.
+  if (opts.layout) w.localStorage.setItem("slip.layout", opts.layout);
   const sent = [];
   // Patch the prototype rather than replacing the constructor: a replaced
   // constructor that returns another object breaks `instanceof`, and older
@@ -347,6 +350,31 @@ console.log("image viewer");
     p.doc.dispatchEvent(new p.w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await settle(150);
     check("Escape closes the viewer", !p.doc.getElementById("viewer"));
+  }
+}
+
+console.log("grid layout");
+{
+  // Grid is the opt-in wall. Every slip has to become a tile, not just
+  // the pictures: a wall that leaves notes in the old list was the bug
+  // this section exists to catch.
+  const g = await page(cookie, { layout: "grid" });
+  const cols = g.doc.querySelectorAll(".wallcol");
+  check("grid builds two columns", cols.length === 2, "columns=" + cols.length);
+  const tiles = Array.from(g.doc.querySelectorAll(".wall .tile"));
+  const empty = tiles.filter((t) => !t.querySelector(".slip") && !t.querySelector(".tileimg"));
+  check("every slip becomes a tile", tiles.length > 0 && empty.length === 0, "tiles=" + tiles.length + " empty=" + empty.length);
+  check("text slips join the wall", !!g.doc.querySelector(".wall .tile .body"));
+  check("grid drops the day separators", !g.doc.querySelector(".daysep"));
+
+  const toList = Array.from(g.doc.querySelectorAll(".nav button")).find((b) => b.textContent === "\u5217\u8868" || b.textContent === "List");
+  check("the nav names the layout a tap switches to", !!toList, g.doc.querySelector(".nav").textContent);
+  if (toList) {
+    toList.dispatchEvent(new g.w.Event("click", { bubbles: true }));
+    await settle(400);
+    check("the toggle returns to the list", !g.doc.querySelector(".wall") && !!g.doc.querySelector(".slip"));
+    const toGrid = Array.from(g.doc.querySelectorAll(".nav button")).find((b) => b.textContent === "\u7f51\u683c" || b.textContent === "Grid");
+    check("the label flips with the layout", !!toGrid, g.doc.querySelector(".nav").textContent);
   }
 }
 
