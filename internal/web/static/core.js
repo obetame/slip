@@ -67,6 +67,12 @@
       already: "口令已经设置过了。",
       legacyNote: "这个页面给 iPad mini 2 和 iOS 12 使用。点「查看」打开图片后，长按可以存到相册。",
       version: "版本",
+      checkUpdate: "检查更新",
+      checking: "检查中…",
+      updateLatest: "已是最新版本。",
+      updateFound: "有新版本",
+      updateFailed: "连不上 GitHub，稍后再试。",
+      releasePage: "发布页",
       dragHint: "松手放下",
       searchPlaceholder: "找一找",
       searchEmpty: "没有找到。",
@@ -158,6 +164,12 @@
       already: "A passphrase is already set.",
       legacyNote: "This page is for iPad mini 2 and iOS 12. After you view a picture, press and hold it to save it to Photos.",
       version: "Version",
+      checkUpdate: "Check for updates",
+      checking: "Checking…",
+      updateLatest: "You are on the latest version.",
+      updateFound: "A newer version is out:",
+      updateFailed: "Could not reach GitHub. Try again later.",
+      releasePage: "Release page",
       dragHint: "Drop to put down",
       searchPlaceholder: "Find a slip",
       searchEmpty: "Nothing matched.",
@@ -726,7 +738,8 @@
       editing: "",
       viewer: null,
       previewText: {},
-      errEl: null
+      errEl: null,
+      update: null
     };
     var formEl = null;
     var writeEl = null;
@@ -2141,7 +2154,43 @@
       }, "textbtn"));
       danger.appendChild(actions);
       node.main.appendChild(danger);
-      node.main.appendChild(el("p", "hint", t("version") + " " + (boot.version || "")));
+      node.main.appendChild(versionSheet(boot));
+    }
+    function versionSheet(boot) {
+      var sheet = el("div", "sheet");
+      sheet.appendChild(el("p", "lead", t("version")));
+      var row = el("div", "urlrow");
+      row.appendChild(el("div", "url", boot.version || ""));
+      var check = btn(t("checkUpdate"), function() {
+        check.disabled = true;
+        check.textContent = t("checking");
+        api("/api/update").then(function(body) {
+          state.update = body;
+          if (state.view === "settings")
+            renderSettings();
+        }).catch(function(err) {
+          check.disabled = false;
+          check.textContent = t("checkUpdate");
+          if (!guard(err))
+            showErr(err);
+        });
+      }, "textbtn");
+      row.appendChild(check);
+      sheet.appendChild(row);
+      var got = state.update;
+      if (got) {
+        if (got.error) {
+          sheet.appendChild(el("p", "hint", t("updateFailed")));
+        } else if (got.newer) {
+          var line = el("p", "hint");
+          line.appendChild(document.createTextNode(t("updateFound") + " " + (got.latest || " ") + " · "));
+          line.appendChild(fileLink(t("releasePage"), got.url || ""));
+          sheet.appendChild(line);
+        } else {
+          sheet.appendChild(el("p", "hint", t("updateLatest")));
+        }
+      }
+      return sheet;
     }
     function closeMenus() {
       document.addEventListener("click", function(e) {

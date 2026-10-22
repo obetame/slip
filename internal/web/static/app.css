@@ -150,6 +150,17 @@ textarea {
 
 .lead { margin: 0 0 14px; font-size: 16.5px; }
 .hint { color: var(--muted); font-size: 14px; margin: 8px 0 0; }
+
+/* A link inside a hint line (the release page after a version check) has
+   to look like a link, not like the sentence around it. */
+.hint a.textbtn {
+  color: var(--seal);
+  text-decoration: underline;
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  font-size: inherit;
+}
 .err { color: var(--seal); font-size: 14px; margin: 8px 0 0; }
 .more {
   display: block;

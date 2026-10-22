@@ -13,7 +13,7 @@ import { byteLength, dayKey, formatBytes, formatTime, kindLabel, safeID, storeGe
 import { allFiles, classifyPaste, previewable } from "./clip";
 import { copyText } from "./clipboard";
 import { render as renderMarkdown, isMarkdown } from "./markdown";
-import type { Bootstrap, Item, ItemsBody, Page, View } from "./types";
+import type { Bootstrap, Item, ItemsBody, Page, UpdateBody, View } from "./types";
 
 export interface Node {
   main: HTMLElement;
@@ -51,6 +51,7 @@ interface State {
   viewer: { id: string; name: string } | null;
   previewText: { [id: string]: string | null };
   errEl: HTMLElement | null;
+  update: UpdateBody | null;
 }
 
 const fileCap = 50 * 1024 * 1024;
@@ -85,7 +86,8 @@ export function start(page: Page, node: Node): void {
     editing: "",
     viewer: null,
     previewText: {},
-    errEl: null
+    errEl: null,
+    update: null
   };
 
   // ---- chrome -------------------------------------------------------
@@ -1694,7 +1696,51 @@ export function start(page: Page, node: Node): void {
     );
     danger.appendChild(actions);
     node.main.appendChild(danger);
-    node.main.appendChild(el("p", "hint", t("version") + " " + (boot.version || "")));
+    node.main.appendChild(versionSheet(boot));
+  }
+
+  // versionSheet answers "am I current". The check runs only when the
+  // button is pressed: this is the one request slip makes to the internet,
+  // and a board that phoned home on every visit would be a different thing
+  // from what this is.
+  function versionSheet(boot: Bootstrap): HTMLElement {
+    const sheet = el("div", "sheet");
+    sheet.appendChild(el("p", "lead", t("version")));
+    const row = el("div", "urlrow");
+    row.appendChild(el("div", "url", boot.version || ""));
+    const check = btn(t("checkUpdate"), function () {
+      check.disabled = true;
+      check.textContent = t("checking");
+      api<UpdateBody>("/api/update")
+        .then(function (body) {
+          state.update = body;
+          if (state.view === "settings") renderSettings();
+        })
+        .catch(function (err) {
+          check.disabled = false;
+          check.textContent = t("checkUpdate");
+          if (!guard(err)) showErr(err);
+        });
+    }, "textbtn");
+    row.appendChild(check);
+    sheet.appendChild(row);
+
+    const got = state.update;
+    if (got) {
+      if (got.error) {
+        sheet.appendChild(el("p", "hint", t("updateFailed")));
+      } else if (got.newer) {
+        // A newer release is worth naming and linking, not just flagging:
+        // the archive and its notes live on the release page.
+        const line = el("p", "hint");
+        line.appendChild(document.createTextNode(t("updateFound") + " " + (got.latest || " ") + " · "));
+        line.appendChild(fileLink(t("releasePage"), got.url || ""));
+        sheet.appendChild(line);
+      } else {
+        sheet.appendChild(el("p", "hint", t("updateLatest")));
+      }
+    }
+    return sheet;
   }
 
   // closeMenus runs once. A More menu is a <details>, so it opens and

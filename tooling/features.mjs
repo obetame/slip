@@ -477,6 +477,24 @@ console.log("markdown render");
   check("img tag is not created", !img.tag("img"));
 }
 
+console.log("settings");
+{
+  // Settings names the running version and offers a check. The check
+  // itself is not pressed here: it asks GitHub, and a test that needs the
+  // internet is a test that fails on a plane.
+  const st = await page(cookie);
+  const toSettings = Array.from(st.doc.querySelectorAll(".nav button")).find((b) => /\u8bbe\u7f6e|Settings/.test(b.textContent));
+  check("settings is reachable from the nav", !!toSettings, st.doc.querySelector(".nav").textContent);
+  if (toSettings) {
+    toSettings.dispatchEvent(new st.w.Event("click", { bubbles: true }));
+    await settle(300);
+    const versions = Array.from(st.doc.querySelectorAll(".sheet .url")).map((n) => n.textContent.trim());
+    check("settings shows the running version", versions.some((v) => /^\d+\.\d+\.\d+$/.test(v)), versions.join(" | "));
+    const checkBtn = Array.from(st.doc.querySelectorAll(".sheet button")).find((b) => /\u68c0\u67e5\u66f4\u65b0|Check for updates/.test(b.textContent));
+    check("settings offers a version check", !!checkBtn, st.doc.querySelector(".nav").textContent);
+  }
+}
+
 console.log("console");
 check("no script errors", p.errs.filter((e) => !/Not implemented|Could not parse CSS/.test(e)).length === 0, p.errs.join(" | "));
 

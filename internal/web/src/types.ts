@@ -38,6 +38,16 @@ export interface ItemsBody {
   hasMore: boolean;
 }
 
+// UpdateBody answers the check in Settings. Error is set instead of the
+// release fields when GitHub could not be reached.
+export interface UpdateBody {
+  current: string;
+  latest?: string;
+  url?: string;
+  newer?: boolean;
+  error?: string;
+}
+
 // ApiError is what core's request helper throws on a failed call.
 export interface ApiError extends Error {
   code?: string;

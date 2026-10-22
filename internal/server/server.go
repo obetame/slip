@@ -79,6 +79,7 @@ func New(st *store.Store, cfg *config.Config, book *session.Book, argon auth.Par
 	mux.HandleFunc("POST /api/logout-all", s.logoutAll)
 	mux.HandleFunc("POST /api/passphrase", s.changePass)
 	mux.HandleFunc("GET /api/items", s.listItems)
+	mux.HandleFunc("GET /api/update", s.checkUpdate)
 	mux.HandleFunc("POST /api/text", s.createText)
 	mux.HandleFunc("POST /api/files", s.upload)
 	mux.HandleFunc("GET /api/items/{id}/raw", s.raw)

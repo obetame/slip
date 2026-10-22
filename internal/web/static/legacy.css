@@ -78,6 +78,16 @@
 
 .lead { margin: 0 0 14px; font-size: 16px; }
 .hint { color: var(--muted); font-size: 16px; margin: 8px 0 0; }
+
+/* The release link after a version check sits inside a hint line, so it
+   has to read as a link rather than as part of the sentence. */
+.hint a.textbtn {
+  display: inline;
+  padding: 0;
+  min-height: 0;
+  color: var(--seal);
+  text-decoration: underline;
+}
 .err { color: var(--seal); font-size: 16px; margin: 8px 0 0; }
 .foot { margin-top: 28px; }
 .foot a { color: var(--muted); font-size: 16px; }
