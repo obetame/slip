@@ -10,6 +10,12 @@ Do the work on a short-lived branch and open a pull request. A small fix can lan
 
 A tag `vX.Y.Z` on `main` publishes the binaries. The tag has to match `internal/version.Current`: tag `v0.1.0` means that file says `0.1.0`. Move the constant in the same commit as the change it names, then tag that commit.
 
+The release page takes its notes from `CHANGELOG.md` and `CHANGELOG.zh-CN.md`:
+the publish job prints the section whose heading is the tag's version, so a
+tag without a section fails the release instead of shipping an empty page.
+Write both languages, newest entry first, and say what changed rather than
+which files moved.
+
 ## Tests
 
 Go 1.27 or newer. [just](https://github.com/casey/just) is optional:

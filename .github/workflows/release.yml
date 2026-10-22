@@ -148,6 +148,9 @@ jobs:
     needs: [unix, macos]
     runs-on: ubuntu-latest
     steps:
+      # The notes come from the changelogs in the repository, so the release
+      # page says what changed rather than what an archive is.
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -168,9 +171,34 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          notes=$(printf '%s\n\n%s\n' \
-            'Archives for Linux, macOS, and Windows. SHA256SUMS lists each file. The tag matches the version printed by slip --version. The macOS archive is signed and notarized, so it opens without a Gatekeeper prompt.' \
-            'Linux、macOS 和 Windows 的压缩包。SHA256SUMS 是每个文件的校验值。标签和 slip --version 打印的版本一致。macOS 的包已签名并公证，打开时不会出现拦截提示。')
+          version="${GITHUB_REF_NAME#v}"
+
+          # changelog FILE prints the section for this version: everything
+          # under "## <version>" up to the next "## " heading. A missing
+          # section stops the job, because a release page that says nothing
+          # about the release is the thing this step exists to prevent.
+          changelog() {
+            awk -v v="$version" '
+              /^## / { if (on) exit; if ($2 == v) on = 1; next }
+              on && !begun && $0 == "" { next }
+              on { begun = 1; print }
+            ' "$1"
+          }
+          en=$(changelog CHANGELOG.md)
+          zh=$(changelog CHANGELOG.zh-CN.md)
+          if [ -z "$en" ] || [ -z "$zh" ]; then
+            echo "slip: $version has no section in CHANGELOG.md or CHANGELOG.zh-CN.md" >&2
+            exit 1
+          fi
+
+          notes="$RUNNER_TEMP/notes.md"
+          {
+            printf '%s\n\n' "$en"
+            printf '%s\n\n' "$zh"
+            printf -- '---\n\n'
+            printf '%s\n\n' 'Archives for Linux, macOS, and Windows. SHA256SUMS lists each file. The tag matches the version printed by slip --version. The macOS archive is signed and notarized, so it opens without a Gatekeeper prompt. To upgrade, stop slip, replace the binary, and start it again: the data directory keeps the slips.'
+            printf '%s\n' 'Linux、macOS 和 Windows 的压缩包。SHA256SUMS 是每个文件的校验值。标签和 slip --version 打印的版本一致。macOS 的包已签名并公证，打开时不会出现拦截提示。升级方法：停掉 slip，替换二进制，再启动；数据目录里的内容不受影响。'
+          } > "$notes"
 
           # Moving a tag means deleting it and creating it again, and deleting a
           # tag demotes the release that was published for it to a draft. A
@@ -207,11 +235,11 @@ jobs:
             gh release edit "$GITHUB_REF_NAME" \
               --draft=false \
               --title "slip ${GITHUB_REF_NAME#v}" \
-              --notes "$notes"
+              --notes-file "$notes"
           else
             gh release create "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" \
               --title "slip ${GITHUB_REF_NAME#v}" \
-              --notes "$notes" \
+              --notes-file "$notes" \
               dist/*
           fi
