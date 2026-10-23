@@ -508,18 +508,24 @@ textarea.editor-input:focus {
 
 /* Secret slips, kept in step with app.css by hand. This sheet is the one
    css_compat_test.go scans, so everything here has to be something Safari 12
-   can parse: no gap, no :has, no logical insets. */
+   parses: no gap, no :has, no logical insets, no accent-color, and no
+   :focus-within (the group gets no focus tint here). */
 
-.secretopts { margin-top: 10px; }
+.secretopts {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
 
 .checkline {
   display: block;
-  margin: 6px 0 0;
+  margin: 0;
   font-size: 13px;
   line-height: 1.6;
 }
 
-.checkline input[type="checkbox"] {
+.checkline input[type="checkbox"],
+.inlinecheck input[type="checkbox"] {
   width: 16px;
   height: 16px;
   margin: 0 8px 0 0;
@@ -528,17 +534,34 @@ textarea.editor-input:focus {
 
 .checktext { font-weight: 500; }
 
-/* The description sits on the same line as the label, so it takes the same
-   size. A larger hint next to a smaller label reads as a second sentence. */
-.checkline .hint {
-  margin: 0 0 0 8px;
-  font-size: 13px;
+.checksub {
+  margin-left: 8px;
+  font-size: 12px;
   color: var(--muted);
 }
 
-.checkline select {
-  min-height: 44px;
-  margin-left: 8px;
+.optsbody { margin: 10px 0 0 24px; }
+
+.optline {
+  display: block;
+  overflow: hidden;
+}
+
+.inlinecheck {
+  display: inline-block;
+  margin: 0;
+  font-size: 13px;
+}
+
+.inlinekeep {
+  float: right;
+  font-size: 13px;
+}
+
+.keepword { margin-right: 8px; }
+
+.inlinekeep select {
+  min-height: 34px;
   padding: 0 6px;
   font: inherit;
   font-size: 16px;
@@ -548,34 +571,87 @@ textarea.editor-input:focus {
   border-radius: 2px;
 }
 
-.codeline { margin-top: 10px; }
+.optfield { margin-top: 14px; }
 
-input.codeinput {
+.optfieldhead {
+  display: block;
+  overflow: hidden;
+  margin: 0 0 5px;
+}
+
+.fieldlabel { float: left; font-size: 12px; color: var(--muted); }
+.fieldaside { float: right; font-size: 12px; color: var(--muted); }
+
+/* The field and its actions are one control: one border, one height,
+   dividers inside. */
+.codegroup {
+  display: flex;
+  align-items: stretch;
+  height: 44px;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+.codegroup input.codeinput {
+  flex: 1 1 auto;
   width: auto;
   min-width: 0;
-  min-height: 44px;
-  margin-left: 8px;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
   padding: 0 10px;
   font-size: 16px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.codegroup input.codeinput[type="password"] { letter-spacing: 0.08em; }
+
+.codegroup .gbtn {
+  flex: none;
+  min-height: 0;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.codegroup .gbtn.is-primary {
+  color: var(--seal-ink);
+  background: var(--seal);
+  font-weight: 500;
+}
+
+.fieldnote {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
 }
 
 /* A note, not another sentence: the seal rule on the left marks it as a
-   warning about the row above rather than more copy. */
+   warning about the block above rather than more copy. */
 .secretnote {
   margin: 10px 0 0;
   padding: 7px 10px;
   border-left: 2px solid var(--seal);
   background: #f6ece9;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.55;
 }
 
 :root[data-theme="dark"] .secretnote { background: #2b2320; }
-
-.codenote { margin: 6px 0 0; font-size: 12.5px; }
 
 .codecard .codehead {
   display: block;
@@ -586,21 +662,28 @@ input.codeinput {
 
 .codecard .codevalue {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 15px;
   letter-spacing: 0.14em;
 }
 
-.codecard .codevalue.is-masked { letter-spacing: 0.22em; color: var(--muted); }
+.codecard .codevalue.is-masked { letter-spacing: 0.2em; color: var(--muted); }
 
-.codetoggle { padding: 0 6px; font-size: 13px; }
+.codecard .textbtn { min-height: 32px; font-size: 13px; }
 
-.codeclose { float: right; padding: 0 6px; font-size: 18px; line-height: 1; }
+.codeclose {
+  float: right;
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 18px;
+  line-height: 1;
+}
 
-.masked { padding: 10px 0 2px; }
+.masked { padding: 8px 0 2px; }
 
 .masked .dots {
-  margin: 0 0 6px;
+  margin: 0 0 5px;
   font-size: 13px;
-  letter-spacing: 0.4em;
+  letter-spacing: 0.32em;
   color: var(--muted);
 }
 
@@ -609,9 +692,11 @@ input.codeinput {
 
 .codeprompt { margin-top: 12px; }
 
-.codeprompt .codeinput { display: inline-block; width: 60%; vertical-align: middle; }
-
-.codeerr { margin: 8px 0 0; color: var(--seal); }
+.codeerr {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--seal);
+}
 
 .slip[data-kind="secret"] .kindtag {
   background: transparent;
@@ -619,6 +704,4 @@ input.codeinput {
   box-shadow: inset 0 0 0 1px var(--seal);
 }
 
-:root[data-theme="dark"] .slip[data-kind="secret"] .kindtag {
-  color: var(--ink);
-}
+:root[data-theme="dark"] .slip[data-kind="secret"] .kindtag { color: var(--ink); }

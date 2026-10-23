@@ -99,7 +99,8 @@
       notText: "只有文字纸条能编辑。",
       secretKind: "密条",
       secretToggle: "密条",
-      secretToggleHint: "内容遮住，取走或到点就消失",
+      secretToggleHint: "内容遮住，别的设备取走就消失",
+      secretKeepHint: "内容遮住，到时自己消失",
       burn: "阅后即焚",
       burnHint: "另一台设备打开后就烧掉",
       ttlLabel: "保留",
@@ -107,9 +108,10 @@
       ttl60: "1 小时",
       ttl24: "24 小时",
       code: "取件码",
-      codePlaceholder: "选填，6 位以上",
+      codePlaceholder: "6 位以上",
+      codeOptional: "选填",
       codeGen: "生成",
-      codeNote: "填了取件码，内容存成密文，输对才能打开。码只显示这一次。",
+      codeNote: "填了就存成密文，只有输对才能打开。",
       codeOnce: "取件码只显示这一次。记下来再走。",
       codeAsk: "输入取件码",
       open: "打开",
@@ -231,7 +233,8 @@
       notText: "Only text slips can be edited.",
       secretKind: "Secret",
       secretToggle: "Secret",
-      secretToggleHint: "Hidden, and gone once taken or expired",
+      secretToggleHint: "Hidden, gone once another device takes it",
+      secretKeepHint: "Hidden, gone when the time is up",
       burn: "Burn after read",
       burnHint: "The next device to open it burns it",
       ttlLabel: "Keep for",
@@ -239,9 +242,10 @@
       ttl60: "1 hour",
       ttl24: "24 hours",
       code: "Code",
-      codePlaceholder: "Optional, 6+ characters",
+      codePlaceholder: "6+ characters",
+      codeOptional: "Optional",
       codeGen: "Generate",
-      codeNote: "With a code, the body is stored encrypted and only that code opens it. The code is shown once.",
+      codeNote: "With a code the body is stored encrypted, and only that code opens it.",
       codeOnce: "This code is shown once. Note it down before you leave.",
       codeAsk: "Enter the code",
       open: "Open",
@@ -1574,24 +1578,28 @@
       });
       line.appendChild(box);
       line.appendChild(el("span", "checktext", t("secretToggle")));
-      line.appendChild(el("span", "hint checkhint", t("secretToggleHint")));
+      line.appendChild(el("span", "checksub", state.secretBurn ? t("secretToggleHint") : t("secretKeepHint")));
       wrap.appendChild(line);
       if (!state.secretOn) {
         return wrap;
       }
-      var burnLine = el("label", "checkline");
+      var body = el("div", "optsbody");
+      var when = el("div", "optline");
+      var burnLabel = el("label", "inlinecheck");
       var burn = document.createElement("input");
       burn.type = "checkbox";
       burn.checked = state.secretBurn;
       burn.addEventListener("change", function() {
         state.secretBurn = burn.checked;
+        var sub = line.querySelector(".checksub");
+        if (sub)
+          sub.textContent = state.secretBurn ? t("secretToggleHint") : t("secretKeepHint");
       });
-      burnLine.appendChild(burn);
-      burnLine.appendChild(el("span", "checktext", t("burn")));
-      burnLine.appendChild(el("span", "hint checkhint", t("burnHint")));
-      wrap.appendChild(burnLine);
-      var keepLine = el("label", "checkline");
-      keepLine.appendChild(el("span", "checktext", t("ttlLabel")));
+      burnLabel.appendChild(burn);
+      burnLabel.appendChild(el("span", "checktext", t("burn")));
+      when.appendChild(burnLabel);
+      var keep = el("label", "inlinekeep");
+      keep.appendChild(el("span", "keepword", t("ttlLabel")));
       var sel = document.createElement("select");
       var choices = [
         { v: 600, label: t("ttl10") },
@@ -1610,10 +1618,15 @@
       sel.addEventListener("change", function() {
         state.secretTTL = Number(sel.value) || 86400;
       });
-      keepLine.appendChild(sel);
-      wrap.appendChild(keepLine);
-      var codeLine = el("div", "checkline codeline");
-      codeLine.appendChild(el("span", "checktext", t("code")));
+      keep.appendChild(sel);
+      when.appendChild(keep);
+      body.appendChild(when);
+      var field = el("div", "optfield");
+      var head = el("div", "optfieldhead");
+      head.appendChild(el("span", "fieldlabel", t("code")));
+      head.appendChild(el("span", "fieldaside", t("codeOptional")));
+      field.appendChild(head);
+      var group = el("div", "codegroup");
       var code = document.createElement("input");
       code.type = state.secretShow ? "text" : "password";
       code.className = "codeinput";
@@ -1631,21 +1644,22 @@
         state.secretShow = !state.secretShow;
         code.type = state.secretShow ? "text" : "password";
         see.textContent = state.secretShow ? t("hide") : t("show");
-      }, "textbtn codetoggle");
+      }, "gbtn");
       see.setAttribute("aria-pressed", state.secretShow ? "true" : "false");
-      codeLine.appendChild(code);
-      codeLine.appendChild(see);
-      codeLine.appendChild(btn(t("codeGen"), function() {
+      var gen = btn(t("codeGen"), function() {
         state.secretCode = newCode();
         state.secretShow = true;
         if (state.view === "board")
           renderBoard();
-      }, "textbtn"));
-      wrap.appendChild(codeLine);
-      if (state.secretCode.replace(/^\s+|\s+$/g, "")) {
-        wrap.appendChild(el("p", "hint codenote", t("codeNote")));
-      }
-      wrap.appendChild(el("p", "hint secretnote", t("secretNote")));
+      }, "gbtn");
+      group.appendChild(code);
+      group.appendChild(see);
+      group.appendChild(gen);
+      field.appendChild(group);
+      field.appendChild(el("p", "fieldnote", t("codeNote")));
+      body.appendChild(field);
+      body.appendChild(el("p", "secretnote", t("secretNote")));
+      wrap.appendChild(body);
       return wrap;
     }
     function codeCard() {
@@ -2141,6 +2155,7 @@
     }
     function codePrompt(it, id) {
       var wrap = el("div", "codeprompt");
+      var group = el("div", "codegroup");
       var input = document.createElement("input");
       input.type = state.revealShow[id] ? "text" : "password";
       input.className = "codeinput";
@@ -2163,7 +2178,7 @@
           return;
         }
         revealSecret(it, id, code);
-      }, "textbtn");
+      }, "gbtn is-primary");
       input.addEventListener("keydown", function(e) {
         if (e.key === "Enter") {
           e.preventDefault();
@@ -2174,12 +2189,13 @@
         state.revealShow[id] = !state.revealShow[id];
         input.type = state.revealShow[id] ? "text" : "password";
         see.textContent = state.revealShow[id] ? t("hide") : t("show");
-      }, "textbtn codetoggle");
-      wrap.appendChild(input);
-      wrap.appendChild(go);
-      wrap.appendChild(see);
+      }, "gbtn");
+      group.appendChild(input);
+      group.appendChild(see);
+      group.appendChild(go);
+      wrap.appendChild(group);
       if (state.codeErr[id])
-        wrap.appendChild(el("p", "hint codeerr", state.codeErr[id]));
+        wrap.appendChild(el("p", "codeerr", state.codeErr[id]));
       return wrap;
     }
     function openSecret(it, id) {

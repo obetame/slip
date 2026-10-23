@@ -32,6 +32,12 @@ carries that version's section, so the notes and this file cannot drift.
 - A secret's countdown keeps up while the page stays open.
 - A file cannot be a secret. Adding one while the switch is on says so instead
   of quietly posting it in the clear.
+- The secret options read as one panel: a hairline under the text, burning and
+  the clock on one line, and a description a size below its label rather than
+  level with it.
+- The code is one field group with its two actions inside the same border,
+  38px tall, instead of a 44px box standing beside 13px text.
+- Checkboxes take the seal colour instead of the system blue.
 
 ### Notes
 

@@ -953,6 +953,8 @@ export function start(page: Page, node: Node): void {
   function secretOptions(): HTMLElement {
     const wrap = el("div", "secretopts");
 
+    // One switch, and a description a step down from its label. The same
+    // size for both is what made the description read as a second sentence.
     const line = el("label", "checkline");
     const box = document.createElement("input") as HTMLInputElement;
     box.type = "checkbox";
@@ -963,27 +965,35 @@ export function start(page: Page, node: Node): void {
     });
     line.appendChild(box);
     line.appendChild(el("span", "checktext", t("secretToggle")));
-    line.appendChild(el("span", "hint checkhint", t("secretToggleHint")));
+    line.appendChild(el("span", "checksub", state.secretBurn ? t("secretToggleHint") : t("secretKeepHint")));
     wrap.appendChild(line);
 
     if (!state.secretOn) {
       return wrap;
     }
 
-    const burnLine = el("label", "checkline");
+    // Everything below belongs to the switch, so it sits under its label,
+    // aligned past the checkbox.
+    const body = el("div", "optsbody");
+
+    // Burning and the clock answer one question, so they share a line.
+    const when = el("div", "optline");
+    const burnLabel = el("label", "inlinecheck");
     const burn = document.createElement("input") as HTMLInputElement;
     burn.type = "checkbox";
     burn.checked = state.secretBurn;
     burn.addEventListener("change", function () {
       state.secretBurn = burn.checked;
+      // The description above says what the switch does; it has to follow.
+      const sub = line.querySelector(".checksub") as HTMLElement | null;
+      if (sub) sub.textContent = state.secretBurn ? t("secretToggleHint") : t("secretKeepHint");
     });
-    burnLine.appendChild(burn);
-    burnLine.appendChild(el("span", "checktext", t("burn")));
-    burnLine.appendChild(el("span", "hint checkhint", t("burnHint")));
-    wrap.appendChild(burnLine);
+    burnLabel.appendChild(burn);
+    burnLabel.appendChild(el("span", "checktext", t("burn")));
+    when.appendChild(burnLabel);
 
-    const keepLine = el("label", "checkline");
-    keepLine.appendChild(el("span", "checktext", t("ttlLabel")));
+    const keep = el("label", "inlinekeep");
+    keep.appendChild(el("span", "keepword", t("ttlLabel")));
     const sel = document.createElement("select") as HTMLSelectElement;
     const choices = [
       { v: 600, label: t("ttl10") },
@@ -1001,11 +1011,20 @@ export function start(page: Page, node: Node): void {
     sel.addEventListener("change", function () {
       state.secretTTL = Number(sel.value) || 86400;
     });
-    keepLine.appendChild(sel);
-    wrap.appendChild(keepLine);
+    keep.appendChild(sel);
+    when.appendChild(keep);
+    body.appendChild(when);
 
-    const codeLine = el("div", "checkline codeline");
-    codeLine.appendChild(el("span", "checktext", t("code")));
+    // The code is a field, not a row of controls: a small label above, and
+    // one bordered group holding the field and its two actions, so the row
+    // does not turn into three boxes of three different heights.
+    const field = el("div", "optfield");
+    const head = el("div", "optfieldhead");
+    head.appendChild(el("span", "fieldlabel", t("code")));
+    head.appendChild(el("span", "fieldaside", t("codeOptional")));
+    field.appendChild(head);
+
+    const group = el("div", "codegroup");
     const code = document.createElement("input") as HTMLInputElement;
     code.type = state.secretShow ? "text" : "password";
     code.className = "codeinput";
@@ -1025,23 +1044,22 @@ export function start(page: Page, node: Node): void {
       state.secretShow = !state.secretShow;
       code.type = state.secretShow ? "text" : "password";
       see.textContent = state.secretShow ? t("hide") : t("show");
-    }, "textbtn codetoggle");
+    }, "gbtn");
     see.setAttribute("aria-pressed", state.secretShow ? "true" : "false");
-    codeLine.appendChild(code);
-    codeLine.appendChild(see);
-    codeLine.appendChild(
-      btn(t("codeGen"), function () {
-        state.secretCode = newCode();
-        state.secretShow = true;
-        if (state.view === "board") renderBoard();
-      }, "textbtn")
-    );
-    wrap.appendChild(codeLine);
+    const gen = btn(t("codeGen"), function () {
+      state.secretCode = newCode();
+      state.secretShow = true;
+      if (state.view === "board") renderBoard();
+    }, "gbtn");
+    group.appendChild(code);
+    group.appendChild(see);
+    group.appendChild(gen);
+    field.appendChild(group);
+    field.appendChild(el("p", "fieldnote", t("codeNote")));
+    body.appendChild(field);
 
-    if (state.secretCode.replace(/^\s+|\s+$/g, "")) {
-      wrap.appendChild(el("p", "hint codenote", t("codeNote")));
-    }
-    wrap.appendChild(el("p", "hint secretnote", t("secretNote")));
+    body.appendChild(el("p", "secretnote", t("secretNote")));
+    wrap.appendChild(body);
     return wrap;
   }
 
@@ -1617,6 +1635,10 @@ export function start(page: Page, node: Node): void {
   // person asks to open one, so the board stays quiet otherwise.
   function codePrompt(it: Item, id: string): HTMLElement {
     const wrap = el("div", "codeprompt");
+    // The same group the composer uses, with the submit at the far end. A
+    // filled segment is the only thing in the card that says "press me".
+    const group = el("div", "codegroup");
+
     const input = document.createElement("input") as HTMLInputElement;
     input.type = state.revealShow[id] ? "text" : "password";
     input.className = "codeinput";
@@ -1630,6 +1652,7 @@ export function start(page: Page, node: Node): void {
     input.addEventListener("input", function () {
       state.codeDraft[id] = input.value;
     });
+
     const go = btn(t("open"), function () {
       const code = (state.codeDraft[id] || "").replace(/^\s+|\s+$/g, "");
       if (code.length < 6) {
@@ -1638,22 +1661,26 @@ export function start(page: Page, node: Node): void {
         return;
       }
       revealSecret(it, id, code);
-    }, "textbtn");
+    }, "gbtn is-primary");
+
     input.addEventListener("keydown", function (e) {
       if (e.key === "Enter") {
         e.preventDefault();
         go.click();
       }
     });
+
     const see = btn(state.revealShow[id] ? t("hide") : t("show"), function () {
       state.revealShow[id] = !state.revealShow[id];
       input.type = state.revealShow[id] ? "text" : "password";
       see.textContent = state.revealShow[id] ? t("hide") : t("show");
-    }, "textbtn codetoggle");
-    wrap.appendChild(input);
-    wrap.appendChild(go);
-    wrap.appendChild(see);
-    if (state.codeErr[id]) wrap.appendChild(el("p", "hint codeerr", state.codeErr[id]));
+    }, "gbtn");
+
+    group.appendChild(input);
+    group.appendChild(see);
+    group.appendChild(go);
+    wrap.appendChild(group);
+    if (state.codeErr[id]) wrap.appendChild(el("p", "codeerr", state.codeErr[id]));
     return wrap;
   }
 
