@@ -992,26 +992,44 @@ export function start(page: Page, node: Node): void {
     burnLabel.appendChild(el("span", "checktext", t("burn")));
     when.appendChild(burnLabel);
 
-    const keep = el("label", "inlinekeep");
+    // Three choices, so they are three chips rather than a popup: a native
+    // select renders its value at 16px (below that iOS zooms the page) and
+    // was the largest text in a row of 12px labels. Chips are 12px, show
+    // every option at once, and no keyboard opens.
+    const keep = el("div", "inlinekeep");
     keep.appendChild(el("span", "keepword", t("ttlLabel")));
-    const sel = document.createElement("select") as HTMLSelectElement;
+    const segs = el("div", "segset");
+    segs.setAttribute("role", "group");
+    segs.setAttribute("aria-label", t("ttlLabel"));
     const choices = [
       { v: 600, label: t("ttl10") },
       { v: 3600, label: t("ttl60") },
       { v: 86400, label: t("ttl24") }
     ];
+    const segBtns: HTMLButtonElement[] = [];
     let i;
     for (i = 0; i < choices.length; i++) {
-      const o = document.createElement("option") as HTMLOptionElement;
-      o.value = String(choices[i].v);
-      o.textContent = choices[i].label;
-      if (choices[i].v === state.secretTTL) o.selected = true;
-      sel.appendChild(o);
+      const on = choices[i].v === state.secretTTL;
+      const seg = btn(choices[i].label, picker(i), on ? "segbtn is-on" : "segbtn");
+      seg.setAttribute("aria-pressed", on ? "true" : "false");
+      segBtns.push(seg);
+      segs.appendChild(seg);
     }
-    sel.addEventListener("change", function () {
-      state.secretTTL = Number(sel.value) || 86400;
-    });
-    keep.appendChild(sel);
+
+    // The classes are swapped in place rather than by repainting, so the
+    // composer keeps its caret and the choice lands instantly.
+    function picker(index: number): () => void {
+      return function () {
+        state.secretTTL = choices[index].v;
+        let j;
+        for (j = 0; j < segBtns.length; j++) {
+          const on = j === index;
+          segBtns[j].className = on ? "segbtn is-on" : "segbtn";
+          segBtns[j].setAttribute("aria-pressed", on ? "true" : "false");
+        }
+      };
+    }
+    keep.appendChild(segs);
     when.appendChild(keep);
     body.appendChild(when);
 
@@ -1621,11 +1639,15 @@ export function start(page: Page, node: Node): void {
       return el("p", "hint secretgone", t("takenBody"));
     }
     const box = el("div", "masked");
-    // The dots are decoration; a screen reader announcing six bullet points
-    // is noise in front of the line that actually explains the slip.
-    const dots = el("p", "dots", "\u25CF \u25CF \u25CF \u25CF \u25CF \u25CF");
-    dots.setAttribute("aria-hidden", "true");
-    box.appendChild(dots);
+    // Three bars of struck-out text say "there is a body here, it is hidden"
+    // without the weight of six solid dots, which read as a password field
+    // rather than as a note with something blacked out.
+    const redact = el("div", "redact");
+    redact.setAttribute("aria-hidden", "true");
+    redact.appendChild(el("span", "redactline"));
+    redact.appendChild(el("span", "redactline"));
+    redact.appendChild(el("span", "redactline"));
+    box.appendChild(redact);
     box.appendChild(el("p", "hint", it.burn ? t("burnHint") : t("secretExpiresHint")));
     if (state.askCode[id]) box.appendChild(codePrompt(it, id));
     return box;

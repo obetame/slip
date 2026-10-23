@@ -1598,27 +1598,37 @@
       burnLabel.appendChild(burn);
       burnLabel.appendChild(el("span", "checktext", t("burn")));
       when.appendChild(burnLabel);
-      var keep = el("label", "inlinekeep");
+      var keep = el("div", "inlinekeep");
       keep.appendChild(el("span", "keepword", t("ttlLabel")));
-      var sel = document.createElement("select");
+      var segs = el("div", "segset");
+      segs.setAttribute("role", "group");
+      segs.setAttribute("aria-label", t("ttlLabel"));
       var choices = [
         { v: 600, label: t("ttl10") },
         { v: 3600, label: t("ttl60") },
         { v: 86400, label: t("ttl24") }
       ];
+      var segBtns = [];
       var i;
       for (i = 0; i < choices.length; i++) {
-        var o = document.createElement("option");
-        o.value = String(choices[i].v);
-        o.textContent = choices[i].label;
-        if (choices[i].v === state.secretTTL)
-          o.selected = true;
-        sel.appendChild(o);
+        var on = choices[i].v === state.secretTTL;
+        var seg = btn(choices[i].label, picker(i), on ? "segbtn is-on" : "segbtn");
+        seg.setAttribute("aria-pressed", on ? "true" : "false");
+        segBtns.push(seg);
+        segs.appendChild(seg);
       }
-      sel.addEventListener("change", function() {
-        state.secretTTL = Number(sel.value) || 86400;
-      });
-      keep.appendChild(sel);
+      function picker(index) {
+        return function() {
+          state.secretTTL = choices[index].v;
+          var j;
+          for (j = 0; j < segBtns.length; j++) {
+            var on2 = j === index;
+            segBtns[j].className = on2 ? "segbtn is-on" : "segbtn";
+            segBtns[j].setAttribute("aria-pressed", on2 ? "true" : "false");
+          }
+        };
+      }
+      keep.appendChild(segs);
       when.appendChild(keep);
       body.appendChild(when);
       var field = el("div", "optfield");
@@ -2145,9 +2155,12 @@
         return el("p", "hint secretgone", t("takenBody"));
       }
       var box = el("div", "masked");
-      var dots = el("p", "dots", "● ● ● ● ● ●");
-      dots.setAttribute("aria-hidden", "true");
-      box.appendChild(dots);
+      var redact = el("div", "redact");
+      redact.setAttribute("aria-hidden", "true");
+      redact.appendChild(el("span", "redactline"));
+      redact.appendChild(el("span", "redactline"));
+      redact.appendChild(el("span", "redactline"));
+      box.appendChild(redact);
       box.appendChild(el("p", "hint", it.burn ? t("burnHint") : t("secretExpiresHint")));
       if (state.askCode[id])
         box.appendChild(codePrompt(it, id));

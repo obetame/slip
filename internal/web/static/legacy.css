@@ -568,18 +568,39 @@ textarea.editor-input:focus {
   font-size: 13px;
 }
 
-.keepword { margin-right: 8px; }
+.keepword { margin-right: 10px; color: var(--muted); }
 
-.inlinekeep select {
-  min-height: 34px;
-  padding: 0 6px;
+/* Three choices, so three chips: a popup hid two of them, and its value had
+   to be 16px to keep iOS from zooming, which made it the largest text in a
+   row of 13px labels. Ink, not seal: this sets a value, it is not the
+   action of the sheet. */
+.segset { display: flex; }
+
+.segbtn {
+  min-height: 28px;
+  margin-left: 6px;
+  padding: 0 9px;
   font: inherit;
-  font-size: 16px;
-  color: var(--ink);
-  background: var(--bg);
+  font-size: 13px;
+  color: var(--muted);
+  background: transparent;
   border: 1px solid var(--line);
   border-radius: 2px;
+  cursor: pointer;
+  touch-action: manipulation;
 }
+
+.segbtn:first-child { margin-left: 0; }
+
+.segbtn.is-on {
+  color: var(--ink);
+  background: var(--bg);
+  border-color: var(--ink);
+  font-weight: 500;
+}
+
+.segbtn:hover { color: var(--ink); }
+
 
 .optfield { margin-top: 14px; }
 
@@ -690,6 +711,24 @@ textarea.editor-input:focus {
 
 .masked { padding: 8px 0 2px; }
 
+/* Three struck-out lines instead of six solid dots: dots read as a password
+   field, and at 13px with open tracking they were the heaviest thing in the
+   card. Bars read as text with something blacked out, which is what this is. */
+.redact { margin: 0 0 9px; }
+
+.redactline {
+  display: block;
+  height: 5px;
+  margin-bottom: 5px;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.redact span:nth-child(1) { width: 68%; }
+.redact span:nth-child(2) { width: 46%; }
+.redact span:nth-child(3) { width: 30%; margin-bottom: 0; }
+
+
 .masked .hint,
 .secretbody .hint,
 .secretgone { font-size: 12px; }
@@ -698,13 +737,6 @@ textarea.editor-input:focus {
 .masked .hint { margin: 0; }
 
 .codecard .hint { font-size: 12px; }
-
-.masked .dots {
-  margin: 0 0 5px;
-  font-size: 13px;
-  letter-spacing: 0.32em;
-  color: var(--muted);
-}
 
 .secretbody .body { margin-bottom: 6px; }
 .secretgone { margin: 10px 0 2px; }
