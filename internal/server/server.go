@@ -17,6 +17,7 @@ import (
 	"github.com/obetame/slip/internal/config"
 	"github.com/obetame/slip/internal/lan"
 	"github.com/obetame/slip/internal/qrcode"
+	"github.com/obetame/slip/internal/seal"
 	"github.com/obetame/slip/internal/session"
 	"github.com/obetame/slip/internal/store"
 	"github.com/obetame/slip/internal/web"
@@ -36,6 +37,9 @@ type Server struct {
 	argon    auth.Params
 	version  string
 	now      func() time.Time
+	// sealCost is the Argon2id cost for a secret slip's code. Tests lower
+	// it, the same way they lower the passphrase cost.
+	sealCost seal.Cost
 
 	mu    sync.Mutex
 	port  int
@@ -59,6 +63,7 @@ func New(st *store.Store, cfg *config.Config, book *session.Book, argon auth.Par
 		now:      time.Now,
 		fails:    map[string]*failRec{},
 		icon:     faviconPNG(),
+		sealCost: seal.DefaultCost(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.home)
@@ -85,6 +90,7 @@ func New(st *store.Store, cfg *config.Config, book *session.Book, argon auth.Par
 	mux.HandleFunc("GET /api/items/{id}/raw", s.raw)
 	mux.HandleFunc("GET /api/items/{id}/thumb", s.thumb)
 	mux.HandleFunc("PATCH /api/items/{id}", s.editItem)
+	mux.HandleFunc("POST /api/items/{id}/reveal", s.reveal)
 	mux.HandleFunc("DELETE /api/items/{id}", s.deleteItem)
 	mux.HandleFunc("POST /api/restore", s.restore)
 	mux.HandleFunc("POST /api/clear", s.clear)
@@ -102,6 +108,13 @@ func (s *Server) SetClock(now func() time.Time) {
 	if now != nil {
 		s.now = now
 	}
+}
+
+// SetSealCost replaces the Argon2id cost for a secret code. Tests use a cheap
+// cost, the same way they lower the passphrase cost, so the suite does not
+// spend most of a second sealing one slip.
+func (s *Server) SetSealCost(c seal.Cost) {
+	s.sealCost = c
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

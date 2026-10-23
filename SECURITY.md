@@ -12,10 +12,16 @@ Slip is a household board on the local network. It is not a service for the publ
 - Requires `X-Slip: 1` on changes, and refuses a cross-site `Origin`.
 - Serves HTML and SVG uploads as downloads (`application/octet-stream`), never inline. JPEG, PNG, GIF, WebP, and PDF may be shown inline.
 - Sets `nosniff`, denies framing, and sends a Content Security Policy with no inline scripts.
+- Keeps a secret slip's body out of the listing, expires it, and can burn it once another browser has read it.
+- With a code, writes a secret to disk as ciphertext under Argon2id and AES-256-GCM, and stores the code nowhere. Ten wrong codes destroy the slip.
 
 ## What it does not do
 
 The page is HTTP. Anyone on the same network who can see the traffic can read a slip and the passphrase at the moment they are sent. A guest on the Wi-Fi is on that network. A router port-forward still looks like a private address to Slip, so the passphrase is the lock, not the address check.
+
+A code on a secret protects the copy on disk, not the wire: the body and the code are readable to anyone who can see the traffic when the slip is put down and again when it is read. A secret is also not private from the household. It is hidden from the board and it expires, but anyone signed in who is told the code can open it, which is what makes handing a token to another device work.
+
+Deleting is not shredding. The file is rewritten without the slip, but a backup, a filesystem journal, or the flash on an SSD may still hold the old bytes. If a secret must not survive anywhere, do not put it here.
 
 Do not reuse a passphrase from email, a bank, or anything else that matters. Do not put Slip on a network you do not trust. Do not publish the port.
 

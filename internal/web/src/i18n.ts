@@ -101,7 +101,42 @@ export const STR: { [lang: string]: { [key: string]: string } } = {
     edited: "已编辑",
     confirmRemove: "确认删除？",
     removedUndo: "已删除，8 秒内可撤销。",
-    notText: "只有文字纸条能编辑。"
+    notText: "只有文字纸条能编辑。",
+    secretKind: "密条",
+    secretToggle: "密条",
+    secretToggleHint: "内容遮住，取走或到点就消失",
+    burn: "阅后即焚",
+    burnHint: "另一台设备打开后就烧掉",
+    ttlLabel: "保留",
+    ttl10: "10 分钟",
+    ttl60: "1 小时",
+    ttl24: "24 小时",
+    code: "取件码",
+    codePlaceholder: "选填，6 位以上",
+    codeGen: "生成",
+    codeNote: "填了取件码，内容存成密文，输对才能打开。码只显示这一次。",
+    codeOnce: "取件码只显示这一次。记下来再走。",
+    codeAsk: "输入取件码",
+    open: "打开",
+    revealHides: "30 秒后自动遮住。",
+    wrongCode: "取件码不对。",
+    codeTooShort: "至少 6 位。",
+    taken: "已被取走",
+    secretGone: "这条密条已经不在了。",
+    secretRemoved: "密条已删除，不能撤销。",
+    secretLocked: "密条不能编辑。",
+    secretNote: "同一 Wi-Fi 上能抓到明文。银行密码别放这里。",
+    secretExpiresHint: "到点就消失，打开前一直是圆点。",
+    secretSealed: "密文",
+    show: "显示",
+    hide: "隐藏",
+    secretTextOnly: "密条只收文字。先关掉密条，再放文件。",
+    takenBody: "这条密条已经被取走了，内容不留在板上。",
+    leftMin: "还剩 {n} 分钟",
+    leftHour: "还剩 {n} 小时",
+    leftDay: "还剩 {n} 天",
+    expired: "已过期",
+    settingsSecret: "密条设了取件码时，内容以密文写在磁盘上，口令不保存。局域网仍是 HTTP，同网段抓包能看到明文。"
   },
   en: {
     mark: "Slip",
@@ -198,7 +233,42 @@ export const STR: { [lang: string]: { [key: string]: string } } = {
     edited: "edited",
     confirmRemove: "Sure delete?",
     removedUndo: "Deleted. You can undo for 8 seconds.",
-    notText: "Only text slips can be edited."
+    notText: "Only text slips can be edited.",
+    secretKind: "Secret",
+    secretToggle: "Secret",
+    secretToggleHint: "Hidden, and gone once taken or expired",
+    burn: "Burn after read",
+    burnHint: "The next device to open it burns it",
+    ttlLabel: "Keep for",
+    ttl10: "10 minutes",
+    ttl60: "1 hour",
+    ttl24: "24 hours",
+    code: "Code",
+    codePlaceholder: "Optional, 6+ characters",
+    codeGen: "Generate",
+    codeNote: "With a code, the body is stored encrypted and only that code opens it. The code is shown once.",
+    codeOnce: "This code is shown once. Note it down before you leave.",
+    codeAsk: "Enter the code",
+    open: "Open",
+    revealHides: "Hidden again in 30 seconds.",
+    wrongCode: "That code is not right.",
+    codeTooShort: "Use at least 6 characters.",
+    taken: "Taken",
+    secretGone: "That secret is no longer there.",
+    secretRemoved: "Secret deleted. That one cannot be undone.",
+    secretLocked: "A secret cannot be edited.",
+    secretNote: "Anyone on this Wi-Fi can read the traffic. Do not put a bank password here.",
+    secretExpiresHint: "Gone when the time is up. Dots until then.",
+    secretSealed: "Encrypted",
+    show: "Show",
+    hide: "Hide",
+    secretTextOnly: "A secret is text only. Turn the secret switch off to add a file.",
+    takenBody: "This secret was taken. The body is not kept on the board.",
+    leftMin: "{n} min left",
+    leftHour: "{n} h left",
+    leftDay: "{n} d left",
+    expired: "Expired",
+    settingsSecret: "With a code, a secret is written to disk as ciphertext and the code is not stored. The LAN is still HTTP, so a sniffer on the same network sees the body in the clear."
   }
 };
 
@@ -211,4 +281,11 @@ export function t(key: string): string {
   if (table[key]) return table[key];
   if (STR.zh[key]) return STR.zh[key];
   return key;
+}
+
+// tn is t with one number filled in. A sentence that has to say "3 minutes"
+// needs its word order from the table, so the placeholder lives in the string
+// rather than being glued together here.
+export function tn(key: string, n: number): string {
+  return t(key).replace("{n}", String(n));
 }

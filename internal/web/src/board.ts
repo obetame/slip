@@ -8,12 +8,12 @@
 
 import { api, postJSON, codeErr, errText } from "./api";
 import { btn, clear, el } from "./dom";
-import { t, lang } from "./i18n";
+import { t, tn, lang } from "./i18n";
 import { byteLength, dayKey, formatBytes, formatTime, kindLabel, safeID, storeGet, storeSet, themeNow } from "./format";
 import { allFiles, classifyPaste, previewable } from "./clip";
 import { copyText } from "./clipboard";
 import { render as renderMarkdown, isMarkdown } from "./markdown";
-import type { Bootstrap, Item, ItemsBody, Page, UpdateBody, View } from "./types";
+import type { Bootstrap, Item, ItemsBody, Page, RevealBody, UpdateBody, View } from "./types";
 
 export interface Node {
   main: HTMLElement;
@@ -52,13 +52,43 @@ interface State {
   previewText: { [id: string]: string | null };
   errEl: HTMLElement | null;
   update: UpdateBody | null;
+
+  // The composer's secret options. They survive a render because the
+  // composer is rebuilt on every paint.
+  secretOn: boolean;
+  secretBurn: boolean;
+  secretTTL: number;
+  secretCode: string;
+  // secretShow is whether the composer is showing the code in clear.
+  // A code typed on screen is worth the same as the token it protects,
+  // so the field is a password field until someone asks otherwise.
+  secretShow: boolean;
+  // lastCode is the code the person just made, shown once and kept until
+  // they dismiss it: the server never has it, so this is the only copy.
+  lastCode: string;
+  lastCodeShow: boolean;
+  // revealed holds the body of each secret that is currently on screen.
+  revealed: { [id: string]: string };
+  // askCode marks the slips whose code field is open, and codeDraft keeps
+  // what was typed when a wrong code forces a repaint.
+  askCode: { [id: string]: boolean };
+  codeDraft: { [id: string]: string };
+  codeErr: { [id: string]: string };
+  // revealShow unmasks one code field at a time.
+  revealShow: { [id: string]: boolean };
+  secretTimer: number;
 }
 
 const fileCap = 50 * 1024 * 1024;
 const textCap = 200 * 1024;
+// secretCap matches store.MaxSecret on the server.
+const secretCap = 4 * 1024;
 // previewCap keeps a text attachment readable; larger ones get a link.
 const previewCap = 256 * 1024;
 const undoMillis = 8000;
+// revealMillis is how long a revealed secret stays readable before the dots
+// come back. The slip is still there; the screen is not a place to leave it.
+const revealMillis = 30000;
 // Long text slips start folded to this many lines. A full render of a
 // note-sized slip would push every action row below the fold.
 const textFoldLines = 12;
@@ -87,7 +117,20 @@ export function start(page: Page, node: Node): void {
     viewer: null,
     previewText: {},
     errEl: null,
-    update: null
+    update: null,
+    secretOn: false,
+    secretBurn: true,
+    secretTTL: 24 * 60 * 60,
+    secretCode: "",
+    secretShow: false,
+    lastCode: "",
+    lastCodeShow: false,
+    revealed: {},
+    askCode: {},
+    codeDraft: {},
+    codeErr: {},
+    revealShow: {},
+    secretTimer: 0
   };
 
   // ---- chrome -------------------------------------------------------
@@ -524,6 +567,9 @@ export function start(page: Page, node: Node): void {
     return state.items.filter(function (it) {
       if (kind && it.kind !== kind) return false;
       if (!q) return true;
+      // A secret has no body in the list, so there is nothing to match and
+      // nothing to leak through a hit count.
+      if (it.secret) return false;
       if (it.kind === "text" && it.text) return it.text.toLowerCase().indexOf(q) !== -1;
       if (it.name) return it.name.toLowerCase().indexOf(q) !== -1;
       return false;
@@ -589,8 +635,21 @@ export function start(page: Page, node: Node): void {
   }
 
   function renderBoard(): void {
+    // The board is rebuilt wholesale on every change, which empties the page
+    // for a moment and takes the scroll position with it. Saving and putting
+    // it back is what keeps the card you were reading under your thumb
+    // instead of sending you to the top to find it again.
+    const y = window.pageYOffset;
     clear(node.main);
+    paintBoard();
+    window.scrollTo(0, y);
+    settlePrompt();
+  }
+
+  function paintBoard(): void {
     node.main.appendChild(composer());
+    const code = codeCard();
+    if (code) node.main.appendChild(code);
     // The search field is always present once there is something to find,
     // otherwise there is no way to start a search.
     if (state.items.length || state.query.trim()) node.main.appendChild(searchBar());
@@ -618,6 +677,25 @@ export function start(page: Page, node: Node): void {
     if (state.hasMore && !state.query.trim() && !state.kindFilter) {
       node.main.appendChild(btn(t("loadMore"), loadMore, "textbtn more"));
       node.main.appendChild(loadMoreSentinel());
+    }
+  }
+
+  // settlePrompt puts the code field back where the person is looking. A
+  // repaint follows every press, and without this the page lands at the top
+  // and the slip they were opening has to be found a second time.
+  function settlePrompt(): void {
+    const box = document.querySelector(".codeprompt") as HTMLElement | null;
+    if (!box) return;
+    const rect = box.getBoundingClientRect();
+    const view = window.innerHeight || document.documentElement.clientHeight || 0;
+    const target = window.pageYOffset + rect.top - Math.max(12, (view - rect.height) / 2);
+    window.scrollTo(0, target < 0 ? 0 : target);
+    const field = box.querySelector(".codeinput") as HTMLInputElement | null;
+    if (!field) return;
+    try {
+      field.focus({ preventScroll: true } as any);
+    } catch (e) {
+      field.focus();
     }
   }
 
@@ -824,6 +902,13 @@ export function start(page: Page, node: Node): void {
 
     const row = el("div", "row");
     const pick = btn(t("addFile"), function () {
+      // A file cannot be a secret, and quietly posting one in the clear
+      // while the switch is on would be the worst possible answer. The
+      // press explains itself instead of doing nothing.
+      if (state.secretOn) {
+        showNotice(t("secretTextOnly"));
+        return;
+      }
       file.click();
     }, "textbtn");
     const go = el("button", "seal", t("drop")) as HTMLButtonElement;
@@ -842,6 +927,7 @@ export function start(page: Page, node: Node): void {
     row.appendChild(go);
     form.appendChild(lab);
     form.appendChild(ta);
+    form.appendChild(secretOptions());
     form.appendChild(row);
     form.appendChild(file);
     const err = errorLine();
@@ -859,6 +945,165 @@ export function start(page: Page, node: Node): void {
     writeEl = ta;
     dropBtn = go;
     return form;
+  }
+
+  // secretOptions is the row that turns a slip into a secret. It is a switch,
+  // not a detector: the product does not guess what looks sensitive, because a
+  // wrong guess teaches people to trust a green light that is not there.
+  function secretOptions(): HTMLElement {
+    const wrap = el("div", "secretopts");
+
+    const line = el("label", "checkline");
+    const box = document.createElement("input") as HTMLInputElement;
+    box.type = "checkbox";
+    box.checked = state.secretOn;
+    box.addEventListener("change", function () {
+      state.secretOn = box.checked;
+      if (state.view === "board") renderBoard();
+    });
+    line.appendChild(box);
+    line.appendChild(el("span", "checktext", t("secretToggle")));
+    line.appendChild(el("span", "hint checkhint", t("secretToggleHint")));
+    wrap.appendChild(line);
+
+    if (!state.secretOn) {
+      return wrap;
+    }
+
+    const burnLine = el("label", "checkline");
+    const burn = document.createElement("input") as HTMLInputElement;
+    burn.type = "checkbox";
+    burn.checked = state.secretBurn;
+    burn.addEventListener("change", function () {
+      state.secretBurn = burn.checked;
+    });
+    burnLine.appendChild(burn);
+    burnLine.appendChild(el("span", "checktext", t("burn")));
+    burnLine.appendChild(el("span", "hint checkhint", t("burnHint")));
+    wrap.appendChild(burnLine);
+
+    const keepLine = el("label", "checkline");
+    keepLine.appendChild(el("span", "checktext", t("ttlLabel")));
+    const sel = document.createElement("select") as HTMLSelectElement;
+    const choices = [
+      { v: 600, label: t("ttl10") },
+      { v: 3600, label: t("ttl60") },
+      { v: 86400, label: t("ttl24") }
+    ];
+    let i;
+    for (i = 0; i < choices.length; i++) {
+      const o = document.createElement("option") as HTMLOptionElement;
+      o.value = String(choices[i].v);
+      o.textContent = choices[i].label;
+      if (choices[i].v === state.secretTTL) o.selected = true;
+      sel.appendChild(o);
+    }
+    sel.addEventListener("change", function () {
+      state.secretTTL = Number(sel.value) || 86400;
+    });
+    keepLine.appendChild(sel);
+    wrap.appendChild(keepLine);
+
+    const codeLine = el("div", "checkline codeline");
+    codeLine.appendChild(el("span", "checktext", t("code")));
+    const code = document.createElement("input") as HTMLInputElement;
+    code.type = state.secretShow ? "text" : "password";
+    code.className = "codeinput";
+    code.value = state.secretCode;
+    code.placeholder = t("codePlaceholder");
+    code.setAttribute("autocomplete", "off");
+    code.setAttribute("autocapitalize", "characters");
+    code.setAttribute("autocorrect", "off");
+    code.setAttribute("spellcheck", "false");
+    code.setAttribute("aria-label", t("code"));
+    code.addEventListener("input", function () {
+      state.secretCode = code.value;
+    });
+    const see = btn(state.secretShow ? t("hide") : t("show"), function () {
+      // Toggled in place rather than by repainting, so the caret stays
+      // where it was and the code is not lost to a re-render.
+      state.secretShow = !state.secretShow;
+      code.type = state.secretShow ? "text" : "password";
+      see.textContent = state.secretShow ? t("hide") : t("show");
+    }, "textbtn codetoggle");
+    see.setAttribute("aria-pressed", state.secretShow ? "true" : "false");
+    codeLine.appendChild(code);
+    codeLine.appendChild(see);
+    codeLine.appendChild(
+      btn(t("codeGen"), function () {
+        state.secretCode = newCode();
+        state.secretShow = true;
+        if (state.view === "board") renderBoard();
+      }, "textbtn")
+    );
+    wrap.appendChild(codeLine);
+
+    if (state.secretCode.replace(/^\s+|\s+$/g, "")) {
+      wrap.appendChild(el("p", "hint codenote", t("codeNote")));
+    }
+    wrap.appendChild(el("p", "hint secretnote", t("secretNote")));
+    return wrap;
+  }
+
+  // codeCard holds the code just made. It is the only copy that exists in a
+  // readable form: the server keeps the ciphertext and never the code, so a
+  // slip whose code was lost can only be deleted and put down again. The code
+  // starts behind dots even here, because a card left on screen is the same
+  // leak as the slip itself.
+  function codeCard(): HTMLElement | null {
+    if (!state.lastCode) return null;
+    const sheet = el("div", "sheet codecard");
+    const head = el("div", "codehead");
+    head.appendChild(el("span", "kindtag", t("code")));
+    const close = btn("\u00D7", function () {
+      state.lastCode = "";
+      state.lastCodeShow = false;
+      if (state.view === "board") renderBoard();
+    }, "textbtn codeclose");
+    close.setAttribute("aria-label", t("close"));
+    head.appendChild(close);
+    sheet.appendChild(head);
+
+    const shown = state.lastCodeShow;
+    const line = el("div", "urlrow");
+    const value = el("div", shown ? "url codevalue" : "url codevalue is-masked", shown ? state.lastCode : "\u2022\u2022\u2022\u2022-\u2022\u2022\u2022\u2022");
+    line.appendChild(value);
+    // Copy works off the real value whether or not it is on screen: the
+    // button is the main way to move a code to another device.
+    line.appendChild(copyButton(state.lastCode));
+    const see = btn(shown ? t("hide") : t("show"), function () {
+      state.lastCodeShow = !state.lastCodeShow;
+      if (state.view === "board") renderBoard();
+    }, "textbtn codetoggle");
+    see.setAttribute("aria-pressed", shown ? "true" : "false");
+    line.appendChild(see);
+    sheet.appendChild(line);
+    sheet.appendChild(el("p", "hint", t("codeOnce")));
+    return sheet;
+  }
+
+  // newCode makes a code shaped like the server's own generator: eight
+  // characters from an alphabet without 0/O or 1/I/L, split in two. It is
+  // generated here rather than on the server so the code never makes a round
+  // trip it does not need.
+  function newCode(): string {
+    const alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+    const bytes: number[] = [];
+    const c = (window as any).crypto;
+    let i: number;
+    if (c && typeof c.getRandomValues === "function") {
+      const buf = new Uint8Array(8);
+      c.getRandomValues(buf);
+      for (i = 0; i < 8; i++) bytes.push(buf[i]);
+    } else {
+      for (i = 0; i < 8; i++) bytes.push(Math.floor(Math.random() * 256));
+    }
+    let out = "";
+    for (i = 0; i < 8; i++) {
+      if (i === 4) out += "-";
+      out += alphabet.charAt(bytes[i] % alphabet.length);
+    }
+    return out;
   }
 
   function hasFiles(e: DragEvent): boolean {
@@ -915,13 +1160,35 @@ export function start(page: Page, node: Node): void {
       showErr(codeErr("empty"));
       return;
     }
-    if (byteLength(text) > textCap) {
+    const cap = state.secretOn ? secretCap : textCap;
+    if (byteLength(text) > cap) {
       showErr(codeErr("text_too_large"));
       return;
     }
+    const code = state.secretCode.replace(/^\s+|\s+$/g, "");
+    if (state.secretOn && code && code.length < 6) {
+      showErr(codeErr("code_too_short"));
+      return;
+    }
+    const body: any = { text: text };
+    if (state.secretOn) {
+      body.secret = true;
+      body.burn = state.secretBurn;
+      body.ttl = state.secretTTL;
+      if (code) body.code = code;
+    }
     run(button, t("drop"), function () {
-      return postJSON("/api/text", { text: text }).then(function () {
+      return postJSON("/api/text", body).then(function () {
+        // The code is shown once, right after the slip is made. Keeping it in
+        // the field would put it in the next slip by accident.
+        if (body.code) {
+          state.lastCode = body.code;
+          state.lastCodeShow = false;
+        }
         state.draft = "";
+        state.secretOn = false;
+        state.secretShow = false;
+        state.secretCode = "";
         return reloadItems();
       });
     });
@@ -929,6 +1196,12 @@ export function start(page: Page, node: Node): void {
 
   function sendFiles(files: File[], button: HTMLButtonElement): void {
     let i;
+    if (state.secretOn) {
+      // Files never become secrets. Dropping one while the switch is on has
+      // to stop rather than quietly post it in the clear.
+      showNotice(t("secretTextOnly"));
+      return;
+    }
     if (!files.length) {
       showErr(codeErr("empty"));
       return;
@@ -1068,15 +1341,59 @@ export function start(page: Page, node: Node): void {
   }
 
   // metaText is the line in the header: time, then size, then an edit
-  // marker. A tile passes short, because the size is the part worth
-  // dropping when the line has to fit in a quarter of the screen.
+  // marker. A secret shows what is left of its life instead of a size,
+  // because the clock is the thing the reader needs. A tile passes short,
+  // because the size is the part worth dropping when the line has to fit in
+  // a quarter of the screen.
   function metaText(it: Item, short?: boolean): string {
     const parts: string[] = [];
     const when = formatTime(it.createdAt);
     if (when) parts.push(when);
-    if (it.size && !short) parts.push(formatBytes(it.size));
+    if (it.secret) {
+      if (it.sealed) parts.push(t("secretSealed"));
+      if (it.takenAt) parts.push(t("taken"));
+      else {
+        const left = leftText(it);
+        if (left) parts.push(left);
+      }
+    } else if (it.size && !short) {
+      parts.push(formatBytes(it.size));
+    }
     if (it.editedAt) parts.push(t("edited"));
     return parts.join(" · ");
+  }
+
+  // startSecretClock keeps "还剩 23 分钟" honest. It rewrites only the meta
+  // line of secrets that are still alive, because a repaint would take the
+  // caret out of the composer or out of an open code field.
+  function startSecretClock(): void {
+    if (state.secretTimer) return;
+    state.secretTimer = setInterval(function () {
+      if (state.view !== "board") return;
+      let i;
+      for (i = 0; i < state.items.length; i++) {
+        const it = state.items[i];
+        if (!it.secret || it.takenAt) continue;
+        const line = document.querySelector('.slip[data-id="' + it.id + '"] .meta') as HTMLElement | null;
+        if (line) line.textContent = metaText(it);
+      }
+    }, 30000);
+  }
+
+  // leftText says how long a secret has. It is coarse on purpose: minutes
+  // under an hour, hours under a day, days beyond that. A clock counting
+  // seconds would draw the eye to the wrong thing.
+  function leftText(it: Item): string {
+    if (!it.expiresAt) return "";
+    const end = new Date(it.expiresAt).getTime();
+    if (isNaN(end)) return "";
+    const ms = end - new Date().getTime();
+    if (ms <= 0) return t("expired");
+    const min = Math.floor(ms / 60000);
+    if (min < 60) return tn("leftMin", min < 1 ? 1 : min);
+    const hours = Math.floor(min / 60);
+    if (hours < 24) return tn("leftHour", hours);
+    return tn("leftDay", Math.round(hours / 24));
   }
 
   // narrowScreen is the width at which a slip header stops showing
@@ -1125,10 +1442,15 @@ export function start(page: Page, node: Node): void {
   // the next render, so nothing stays armed for long.
   function slipNode(it: Item, newest: boolean, compact?: boolean): HTMLElement {
     const id = safeID(it.id);
+    const secret = !!it.secret;
     const card = el("article", newest ? "slip is-new" : "slip");
     // The kind drives the tag colour in the CSS; data-kind keeps that
-    // choice in the document rather than in a class-name string.
-    card.setAttribute("data-kind", it.kind);
+    // choice in the document rather than in a class-name string. A secret
+    // gets its own value so the tag can be marked without a second class.
+    card.setAttribute("data-kind", secret ? "secret" : it.kind);
+    // data-id lets a repaint find one card again, which is what keeps the
+    // code field of the slip you are opening under your thumb.
+    if (id) card.setAttribute("data-id", id);
 
     // The header holds the time on the left and the actions on the
     // right. It sticks to the viewport top while its card is on
@@ -1138,15 +1460,44 @@ export function start(page: Page, node: Node): void {
     // first thing a person scans for. A tile is narrow enough that the
     // seal keeps only its glyph, with the words left to the tooltip.
     const head = el("div", "sliphead");
-    const glyph = compact ? kindGlyph(it.kind).replace(" ", "") : kindGlyph(it.kind) + kindLabel(it.kind);
+    const tagLabel = secret ? t("secretKind") : kindLabel(it.kind);
+    const tagGlyph = secret ? "\u25CF " : kindGlyph(it.kind);
+    const glyph = compact ? tagGlyph.replace(" ", "") : tagGlyph + tagLabel;
     const kindTag = el("span", "kindtag", glyph);
-    if (compact) kindTag.setAttribute("title", kindLabel(it.kind));
+    if (compact) kindTag.setAttribute("title", tagLabel);
     head.appendChild(kindTag);
     head.appendChild(el("span", "meta", metaText(it, compact)));
     // Every action is built first and laid out afterwards, because the
     // header decides how many of them fit beside the time.
     const actions: HTMLElement[] = [];
-    if (it.kind === "text") {
+    if (secret) {
+      // A tombstone has nothing to open and nothing to copy, so it falls
+      // through with only the delete action.
+      if (id && !it.takenAt) {
+        // A secret reads through one control that opens and closes, because
+        // the body is not in the list to copy from. Copy comes first once the
+        // body is on screen: it is the reason for opening the slip, so it is
+        // the action that must survive the More menu on a narrow screen.
+        const shown = !!state.revealed[id];
+        if (shown) {
+          const copy = btn(t("copy"), function () {
+            copyButtonText(state.revealed[id], copy);
+          }, "textbtn");
+          actions.push(copy);
+        }
+        actions.push(
+          btn(shown ? t("previewClose") : t("open"), function () {
+            if (state.revealed[id]) {
+              delete state.revealed[id];
+            } else {
+              openSecret(it, id);
+              return;
+            }
+            if (state.view === "board") renderBoard();
+          }, "textbtn")
+        );
+      }
+    } else if (it.kind === "text") {
       const copy = btn(t("copy"), function () {
         copyButtonText(it.text || "", copy);
       }, "textbtn");
@@ -1169,7 +1520,7 @@ export function start(page: Page, node: Node): void {
           if (state.view === "board") renderBoard();
         }, "textbtn")
       );
-    } else if (it.kind === "text" && id && state.editing !== id && countLines(it.text || "") > textFoldLines) {
+    } else if (!secret && it.kind === "text" && id && state.editing !== id && countLines(it.text || "") > textFoldLines) {
       // The same toggle folds a long text slip back up. Only a slip
       // that starts folded gets one, so the row is not crowded with a
       // control that would do nothing.
@@ -1185,7 +1536,7 @@ export function start(page: Page, node: Node): void {
         }, "textbtn")
       );
     }
-    if (it.kind === "text" && id && state.editing !== id) {
+    if (!secret && it.kind === "text" && id && state.editing !== id) {
       actions.push(
         btn(t("edit"), function () {
           state.editing = id;
@@ -1211,7 +1562,9 @@ export function start(page: Page, node: Node): void {
     }, compact));
     card.appendChild(head);
 
-    if (it.kind === "text" && state.editing === id) {
+    if (secret) {
+      card.appendChild(secretBody(it, id));
+    } else if (it.kind === "text" && state.editing === id) {
       card.appendChild(textEditor(it, id));
     } else if (it.kind === "text") {
       card.appendChild(textBody(it, id));
@@ -1232,6 +1585,136 @@ export function start(page: Page, node: Node): void {
       }
     }
     return card;
+  }
+
+  // secretBody is what a secret slip shows instead of its text. The body is
+  // not in the list at all, so this asks for it and keeps it on screen for
+  // half a minute: long enough to copy a token, short enough that the slip is
+  // not left readable on a kitchen table.
+  function secretBody(it: Item, id: string): HTMLElement {
+    const shown = state.revealed[id];
+    if (shown) {
+      const wrap = el("div", "secretbody");
+      wrap.appendChild(el("pre", "body", shown));
+      wrap.appendChild(el("p", "hint", t("revealHides")));
+      return wrap;
+    }
+    if (it.takenAt) {
+      return el("p", "hint secretgone", t("takenBody"));
+    }
+    const box = el("div", "masked");
+    // The dots are decoration; a screen reader announcing six bullet points
+    // is noise in front of the line that actually explains the slip.
+    const dots = el("p", "dots", "\u25CF \u25CF \u25CF \u25CF \u25CF \u25CF");
+    dots.setAttribute("aria-hidden", "true");
+    box.appendChild(dots);
+    box.appendChild(el("p", "hint", it.burn ? t("burnHint") : t("secretExpiresHint")));
+    if (state.askCode[id]) box.appendChild(codePrompt(it, id));
+    return box;
+  }
+
+  // codePrompt is the field for a sealed slip. It only appears after the
+  // person asks to open one, so the board stays quiet otherwise.
+  function codePrompt(it: Item, id: string): HTMLElement {
+    const wrap = el("div", "codeprompt");
+    const input = document.createElement("input") as HTMLInputElement;
+    input.type = state.revealShow[id] ? "text" : "password";
+    input.className = "codeinput";
+    input.value = state.codeDraft[id] || "";
+    input.placeholder = t("codeAsk");
+    input.setAttribute("autocomplete", "off");
+    input.setAttribute("autocapitalize", "characters");
+    input.setAttribute("autocorrect", "off");
+    input.setAttribute("spellcheck", "false");
+    input.setAttribute("aria-label", t("codeAsk"));
+    input.addEventListener("input", function () {
+      state.codeDraft[id] = input.value;
+    });
+    const go = btn(t("open"), function () {
+      const code = (state.codeDraft[id] || "").replace(/^\s+|\s+$/g, "");
+      if (code.length < 6) {
+        state.codeErr[id] = t("codeTooShort");
+        if (state.view === "board") renderBoard();
+        return;
+      }
+      revealSecret(it, id, code);
+    }, "textbtn");
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        go.click();
+      }
+    });
+    const see = btn(state.revealShow[id] ? t("hide") : t("show"), function () {
+      state.revealShow[id] = !state.revealShow[id];
+      input.type = state.revealShow[id] ? "text" : "password";
+      see.textContent = state.revealShow[id] ? t("hide") : t("show");
+    }, "textbtn codetoggle");
+    wrap.appendChild(input);
+    wrap.appendChild(go);
+    wrap.appendChild(see);
+    if (state.codeErr[id]) wrap.appendChild(el("p", "hint codeerr", state.codeErr[id]));
+    return wrap;
+  }
+
+  // openSecret is the press behind "Open". A sealed slip asks for its code
+  // first; an unsealed one only hid its body from the list, so it can be
+  // fetched straight away.
+  function openSecret(it: Item, id: string): void {
+    if (it.sealed) {
+      state.askCode[id] = true;
+      // renderBoard scrolls the field into view and puts the caret in it.
+      if (state.view === "board") renderBoard();
+      return;
+    }
+    revealSecret(it, id, "");
+  }
+
+  function revealSecret(it: Item, id: string, code: string): void {
+    postJSON<RevealBody>("/api/items/" + id + "/reveal", { code: code }).then(
+      function (body) {
+        state.revealed[id] = body.text || "";
+        delete state.askCode[id];
+        delete state.codeDraft[id];
+        delete state.codeErr[id];
+        delete state.revealShow[id];
+        if (body.burned) {
+          // The reader has the body; the board keeps only the receipt, so
+          // a refresh from now on finds a tombstone instead of a slip. The
+          // local copy has to lose its ciphertext and burn flags too, or the
+          // header would go on saying 密文 about a slip that no longer exists.
+          it.takenAt = new Date().toISOString();
+          it.sealed = false;
+          it.burn = false;
+        }
+        if (state.view === "board") renderBoard();
+        setTimeout(function () {
+          if (!state.revealed[id]) return;
+          delete state.revealed[id];
+          if (state.view === "board") renderBoard();
+        }, revealMillis);
+      },
+      function (err: any) {
+        const code2 = (err && err.code) || "";
+        if (code2 === "wrong_code") {
+          state.codeErr[id] = t("wrongCode");
+          if (state.view === "board") renderBoard();
+          return;
+        }
+        if (code2 === "code_required") {
+          state.askCode[id] = true;
+          if (state.view === "board") renderBoard();
+          return;
+        }
+        if (code2 === "gone") {
+          delete state.revealed[id];
+          showNotice(t("secretGone"));
+          reloadItems();
+          return;
+        }
+        if (!guard(err)) showErr(err);
+      }
+    );
   }
 
   // textBody renders a text slip. A slip longer than textFoldLines
@@ -1537,6 +2020,11 @@ export function start(page: Page, node: Node): void {
   // ---- delete and undo ----------------------------------------------
 
   function removeItem(id: string): void {
+    let secret = false;
+    let i;
+    for (i = 0; i < state.items.length; i++) {
+      if (state.items[i].id === id && state.items[i].secret) secret = true;
+    }
     api("/api/items/" + id, { method: "DELETE" })
       .then(function () {
         state.items = state.items.filter(function (it) {
@@ -1545,7 +2033,18 @@ export function start(page: Page, node: Node): void {
         delete state.openPreview[id];
         delete state.openText[id];
         delete state.previewText[id];
-        queueUndo([id]);
+        delete state.revealed[id];
+        delete state.askCode[id];
+        delete state.codeDraft[id];
+        delete state.codeErr[id];
+        delete state.revealShow[id];
+        // A secret gets no undo: the bar promises the bytes are still there,
+        // and that is the promise a secret must not make.
+        if (secret) {
+          say(t("secretRemoved"));
+        } else {
+          queueUndo([id]);
+        }
         if (state.view === "board") renderBoard();
       })
       .catch(function (err) {
@@ -1651,6 +2150,12 @@ export function start(page: Page, node: Node): void {
     });
     node.main.appendChild(form);
 
+    // What a secret can and cannot do, in the one place a person goes to
+    // read about the board. Saying it here keeps the composer quiet.
+    const about = el("div", "sheet");
+    about.appendChild(el("p", "hint", t("settingsSecret")));
+    node.main.appendChild(about);
+
     const danger = el("div", "sheet");
     const actions = el("div", "row split");
     const clearBtn: HTMLButtonElement = btn(
@@ -1671,8 +2176,15 @@ export function start(page: Page, node: Node): void {
             state.openPreview = {};
             state.openText = {};
             state.previewText = {};
+            state.revealed = {};
+            state.askCode = {};
+            state.codeDraft = {};
+            state.codeErr = {};
             state.view = "board";
-            queueUndo(body.ids || []);
+            // Secrets were destroyed outright, so the list may come back
+            // empty: there is nothing for the undo bar to hold.
+            const ids = body.ids || [];
+            if (ids.length) queueUndo(ids);
             say(t("cleared"));
             route();
           });
@@ -1762,6 +2274,7 @@ export function start(page: Page, node: Node): void {
 
   installDragHandlers();
   installKeys();
+  startSecretClock();
   closeMenus();
   applyChrome();
   paintNav();

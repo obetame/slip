@@ -19,6 +19,7 @@ Tools that already exist solve a nearby problem and miss this one.
 - One shared passphrase. Minimum 6 characters, maximum 200, counted in Unicode code points. It is not trimmed. It is stored only as a hash.
 - A browser that passes the check gets an HttpOnly cookie for 180 days.
 - Slips stay until someone deletes them, or clears the board. Delete can be undone.
+- A secret slip is the one exception: text only, never listed with its body, and it always expires. It exists because a token pasted on Monday is still on the board in March.
 - One file is at most 50 MB. One text slip is at most 200 KB of UTF-8. The data directory is at most 5 GB of file bytes.
 - Text is plain text. There is no Markdown rendering.
 - The interface is Chinese first, with an English toggle kept in `localStorage` under `slip.lang`. The theme is light unless the person chooses dark (`slip.theme`).
@@ -63,7 +64,7 @@ Mode `0700` on the directory, mode `0600` on files. The default on macOS is `~/L
 | --- | --- |
 | `config.json` | Port, Argon2id hash, creation time |
 | `sessions.json` | SHA-256 of each token, and when it expires |
-| `items.json` | The stack, including slips waiting out the undo window |
+| `items.json` | The stack, including slips waiting out the undo window. A sealed secret keeps salt, nonce, and ciphertext here, never the body |
 | `blobs/` | File bytes, named by SHA-256 |
 | `thumbs/` | JPEG previews, `<hash>.jpg` |
 | `incoming/` | Upload temp files on the same filesystem as the blobs |
@@ -125,9 +126,10 @@ There is no inline script, which is why the theme is applied by `/boot.js` rathe
 | POST | `/api/login` | Anyone on the LAN, subject to the lockout |
 | POST | `/api/logout`, `/api/logout-all`, `/api/passphrase` | Signed in |
 | GET | `/api/items` | Signed in. `limit` defaults to 40 and caps at 100. `before` is an id. An unknown id restarts at the newest. |
-| POST | `/api/text` | Signed in. JSON `{"text":"..."}`. |
+| POST | `/api/text` | Signed in. JSON `{"text":"..."}`. Adds `secret`, `ttl`, `burn`, `code` for a secret slip. |
 | POST | `/api/files` | Signed in. Multipart field `file`, at most 8 files. |
 | GET | `/api/items/{id}/raw` | Signed in. `?dl=1` forces a download. |
+| POST | `/api/items/{id}/reveal` | Signed in. JSON `{"code":"..."}` for a sealed slip. Returns the body, and takes a burn slip. |
 | GET | `/api/items/{id}/thumb` | Signed in, JPEG preview |
 | DELETE | `/api/items/{id}` | Signed in. Soft delete. |
 | PATCH | `/api/items/{id}` | Signed in. JSON `{"text":"..."}`. Text slips only. Keeps `createdAt` and the place in the stack, sets `editedAt`. |
@@ -154,6 +156,63 @@ The browser client is written once. `internal/web/src/` holds TypeScript, and bo
 
 The sources may use modern syntax. What they may not use is a runtime the iPad lacks: no `AbortController`, no `Promise.finally`, no `globalThis`, and no `for...of` over a non-array iterable. `downlevelIteration` stays off so that mistake is a compile error rather than a handful of helpers copied into every bundle. CSS is not checked by a compiler, so `css_compat_test.go` scans `tokens.css` and `legacy.css` for properties and functions that iOS 12 ignores.
 
+## Secret slips
+
+A slip is normally kept until someone deletes it. That promise is the product
+for a note or a photo, and it is the wrong promise for a token. A secret slip is
+the exception, and it is narrow on purpose: text only, never a file, never a
+picture, and it always ends.
+
+Three things are asked for at the composer, and all three are optional.
+
+- **Hidden.** The body never appears in `/api/items`. The list carries `secret`,
+  `sealed`, `expiresAt`, `burn`, and `takenAt`, and nothing else. Reading needs
+  `POST /api/items/{id}/reveal`, which is a POST because it changes the slip:
+  the read is counted.
+- **Expiring.** `ttl` in seconds, clamped to between one minute and seven days,
+  defaulting to 24 hours. The janitor that already sweeps the undo window drops
+  an expired secret outright. There is no undo window for one: the undo bar says
+  the bytes are still there, which is the one thing a secret must not say.
+- **Burning.** If a browser other than the one that put the slip down reveals it,
+  the body is erased and a tombstone is left for an hour carrying only the time
+  it was taken. The browser is named by `X-Slip-Device`, a random value kept in
+  `localStorage`. It is not an identity and nothing trusts it; it exists so that
+  refreshing the phone that pasted the token does not destroy the token, while a
+  different browser does.
+
+A revealed body goes back behind the dots after 30 seconds. The slip is still
+there; the screen is not a place to leave it.
+
+### The code
+
+A secret can also carry a code. The body is then sealed with Argon2id over the
+code and AES-256-GCM, and `items.json` holds the salt, the nonce, and the
+ciphertext. The code itself is stored nowhere: losing it means the slip can only
+be deleted and put down again. Eight characters over
+`23456789ABCDEFGHJKMNPQRSTUVWXYZ` is about 40 bits, which survives an offline
+attack on a stolen file and is still short enough to read off a screen and type
+on a phone. Ten wrong codes destroy the slip, so guessing ends the thing being
+guessed at instead of leaking it slowly.
+
+The code is masked both where it is typed and on the card that shows it once
+after a slip is put down. A code left readable on a kitchen table is the same
+leak as the body. Copy works while it is masked, because moving a code to
+another device is what the card is for.
+
+What the code buys is one specific thing: a copy of the data directory, from a
+backup or from a disk that left the house, is no longer a pile of readable
+tokens. What it does not buy is anything on the wire. The page is HTTP, so the
+code and the body cross the network in the clear when a slip is put down and
+again when it is read.
+
+Client-side sealing was considered and rejected. `crypto.subtle` only exists in
+a secure context, and a LAN page on plain HTTP is not one, so the browser cannot
+do it without shipping a hand-written cipher.
+
+The product does not guess. Nothing scans a paste for something that looks like
+a key. A wrong guess is annoying, and a missed guess is worse, because a person
+who sees no warning learns to trust the absence of one.
+
 ## Threat model
 
 | Threat | Response in 0.1.0 |
@@ -165,12 +224,18 @@ The sources may use modern syntax. What they may not use is a runtime the iPad l
 | Path in an uploaded name | The stored path is a hash. The download name is the base name, with header escaping. |
 | Passphrase guessing | Argon2id, a short lockout, and a minimum length. This is not a defense against a passphrase that was reused from somewhere else. |
 | Two processes, one directory | The second process exits. |
-| Stolen data directory | The passphrase is a hash. Sessions on disk are hashes. The slips themselves are readable, which is the point of the files. |
+| Stolen data directory | The passphrase is a hash. Sessions on disk are hashes. The slips themselves are readable, which is the point of the files. A sealed secret is the exception: it is ciphertext under a code that is stored nowhere. |
+| A secret read off the screen | The body is masked in the list, openable only on purpose, and back behind the dots after 30 seconds. |
+| A secret on the wire | Not defended. The page is HTTP, so the body is visible to a sniffer when it is put down and again when it is read. |
+| Guessing a code | Argon2id, and the tenth wrong code destroys the slip. |
 
 ## Not in 0.1.0
 
 - A Homebrew formula.
 - `slip install` as a LaunchAgent. If it is added later, it should be off unless the person asks.
 - Optional HTTPS.
+- A vault. There is no master key, no per-slip key beyond an optional code, and
+  no zero-knowledge storage. That is a password manager's job, and a worse one
+  here would make the board worse.
 - A menu bar icon or a global hotkey.
 - Accounts, sync, or Markdown.

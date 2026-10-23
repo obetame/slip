@@ -3,6 +3,42 @@
 What changed in each release, newest first. The release page for a tag
 carries that version's section, so the notes and this file cannot drift.
 
+## 0.4.0 - 2026-10-23
+
+### Added
+
+- Secret slips. A slip can be marked as a secret when it is written: its body
+  never appears in the list, it expires, and it can burn after it is read.
+- A code for a secret. With a code, the body is written to disk as ciphertext
+  under Argon2id and AES-256-GCM, the code is stored nowhere, and ten wrong
+  tries destroy the slip.
+- Burn after read. A browser other than the one that put the slip down takes
+  it: the body is erased and an hour-long tombstone says only when.
+- A countdown on the header of a secret, and a body that returns behind dots
+  thirty seconds after it is opened.
+
+### Changed
+
+- Deleting a secret is final. It gets no undo, because the undo bar promises
+  the bytes are still there.
+- Clearing the board destroys its secrets outright; the undo bar collects only
+  what can still be restored.
+- A code is masked where it is typed and on the card that shows it once after
+  a slip is put down. A Show toggle reveals it; Copy works while it is hidden.
+- Opening a secret scrolls its code field into view instead of throwing the
+  page back to the top, and a wrong code leaves the caret in the field.
+- The secret switch and its description share a baseline, and the warning
+  about the network reads as a note rather than as one more sentence.
+- A secret's countdown keeps up while the page stays open.
+- A file cannot be a secret. Adding one while the switch is on says so instead
+  of quietly posting it in the clear.
+
+### Notes
+
+- The page is still HTTP. A code protects a stolen data directory, not the
+  wire: a sniffer on the same network sees the body when it is put down and
+  again when it is read.
+
 ## 0.3.0 - 2026-10-22
 
 ### Added

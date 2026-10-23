@@ -96,7 +96,42 @@
       edited: "已编辑",
       confirmRemove: "确认删除？",
       removedUndo: "已删除，8 秒内可撤销。",
-      notText: "只有文字纸条能编辑。"
+      notText: "只有文字纸条能编辑。",
+      secretKind: "密条",
+      secretToggle: "密条",
+      secretToggleHint: "内容遮住，取走或到点就消失",
+      burn: "阅后即焚",
+      burnHint: "另一台设备打开后就烧掉",
+      ttlLabel: "保留",
+      ttl10: "10 分钟",
+      ttl60: "1 小时",
+      ttl24: "24 小时",
+      code: "取件码",
+      codePlaceholder: "选填，6 位以上",
+      codeGen: "生成",
+      codeNote: "填了取件码，内容存成密文，输对才能打开。码只显示这一次。",
+      codeOnce: "取件码只显示这一次。记下来再走。",
+      codeAsk: "输入取件码",
+      open: "打开",
+      revealHides: "30 秒后自动遮住。",
+      wrongCode: "取件码不对。",
+      codeTooShort: "至少 6 位。",
+      taken: "已被取走",
+      secretGone: "这条密条已经不在了。",
+      secretRemoved: "密条已删除，不能撤销。",
+      secretLocked: "密条不能编辑。",
+      secretNote: "同一 Wi-Fi 上能抓到明文。银行密码别放这里。",
+      secretExpiresHint: "到点就消失，打开前一直是圆点。",
+      secretSealed: "密文",
+      show: "显示",
+      hide: "隐藏",
+      secretTextOnly: "密条只收文字。先关掉密条，再放文件。",
+      takenBody: "这条密条已经被取走了，内容不留在板上。",
+      leftMin: "还剩 {n} 分钟",
+      leftHour: "还剩 {n} 小时",
+      leftDay: "还剩 {n} 天",
+      expired: "已过期",
+      settingsSecret: "密条设了取件码时，内容以密文写在磁盘上，口令不保存。局域网仍是 HTTP，同网段抓包能看到明文。"
     },
     en: {
       mark: "Slip",
@@ -193,7 +228,42 @@
       edited: "edited",
       confirmRemove: "Sure delete?",
       removedUndo: "Deleted. You can undo for 8 seconds.",
-      notText: "Only text slips can be edited."
+      notText: "Only text slips can be edited.",
+      secretKind: "Secret",
+      secretToggle: "Secret",
+      secretToggleHint: "Hidden, and gone once taken or expired",
+      burn: "Burn after read",
+      burnHint: "The next device to open it burns it",
+      ttlLabel: "Keep for",
+      ttl10: "10 minutes",
+      ttl60: "1 hour",
+      ttl24: "24 hours",
+      code: "Code",
+      codePlaceholder: "Optional, 6+ characters",
+      codeGen: "Generate",
+      codeNote: "With a code, the body is stored encrypted and only that code opens it. The code is shown once.",
+      codeOnce: "This code is shown once. Note it down before you leave.",
+      codeAsk: "Enter the code",
+      open: "Open",
+      revealHides: "Hidden again in 30 seconds.",
+      wrongCode: "That code is not right.",
+      codeTooShort: "Use at least 6 characters.",
+      taken: "Taken",
+      secretGone: "That secret is no longer there.",
+      secretRemoved: "Secret deleted. That one cannot be undone.",
+      secretLocked: "A secret cannot be edited.",
+      secretNote: "Anyone on this Wi-Fi can read the traffic. Do not put a bank password here.",
+      secretExpiresHint: "Gone when the time is up. Dots until then.",
+      secretSealed: "Encrypted",
+      show: "Show",
+      hide: "Hide",
+      secretTextOnly: "A secret is text only. Turn the secret switch off to add a file.",
+      takenBody: "This secret was taken. The body is not kept on the board.",
+      leftMin: "{n} min left",
+      leftHour: "{n} h left",
+      leftDay: "{n} d left",
+      expired: "Expired",
+      settingsSecret: "With a code, a secret is written to disk as ciphertext and the code is not stored. The LAN is still HTTP, so a sniffer on the same network sees the body in the clear."
     }
   };
   function lang() {
@@ -207,97 +277,8 @@
       return STR.zh[key];
     return key;
   }
-
-  // ../.webuild/api.js
-  function api(path, opts) {
-    opts = opts || {};
-    var headers = opts.headers || {};
-    headers["X-Slip"] = "1";
-    opts.headers = headers;
-    opts.credentials = "same-origin";
-    return fetch(path, opts).then(function(res) {
-      var ct = res.headers.get("Content-Type") || "";
-      if (ct.indexOf("json") !== -1) {
-        return res.json().then(function(body) {
-          if (!res.ok) {
-            var err2 = new Error(body && body.error || "bad_request");
-            err2.code = body && body.error;
-            err2.status = res.status;
-            throw err2;
-          }
-          return body;
-        });
-      }
-      if (!res.ok) {
-        var err = new Error("bad_request");
-        err.code = "bad_request";
-        err.status = res.status;
-        throw err;
-      }
-      return null;
-    });
-  }
-  function postJSON(path, obj) {
-    return api(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(obj)
-    });
-  }
-  function codeErr(code) {
-    var err = new Error(code);
-    err.code = code;
-    return err;
-  }
-  function errText(err) {
-    if (!err || !err.code)
-      return t("errorNet");
-    var map = {
-      passphrase_too_short: "tooShort",
-      passphrase_too_long: "tooLong",
-      passphrase_mismatch: "mismatch",
-      wrong_passphrase: "wrong",
-      locked: "locked",
-      too_large: "tooBig",
-      text_too_large: "textTooBig",
-      quota: "quota",
-      empty: "emptyText",
-      unauthorized: "wrong",
-      setup_required: "waiting",
-      already_setup: "already",
-      forbidden: "forbidden",
-      gone: "errorGeneric",
-      not_found: "errorGeneric",
-      bad_request: "errorGeneric"
-    };
-    var key = err.code ? map[err.code] : "";
-    if (key)
-      return t(key);
-    return t("errorGeneric");
-  }
-
-  // ../.webuild/dom.js
-  function el(tag, cls, text) {
-    var node = document.createElement(tag);
-    if (cls)
-      node.className = cls;
-    if (text != null)
-      node.textContent = text;
-    return node;
-  }
-  function btn(label, fn, cls) {
-    var b = document.createElement("button");
-    if (cls)
-      b.className = cls;
-    b.type = "button";
-    b.textContent = label;
-    b.addEventListener("click", function() {
-      fn();
-    });
-    return b;
-  }
-  function clear(node) {
-    node.textContent = "";
+  function tn(key, n) {
+    return t(key).replace("{n}", String(n));
   }
 
   // ../.webuild/format.js
@@ -375,6 +356,130 @@
     if (kind === "file")
       return t("fileKind");
     return t("textKind");
+  }
+
+  // ../.webuild/api.js
+  function deviceTag() {
+    var saved = storeGet("slip.dev");
+    if (saved && /^[0-9a-f]{16}$/.test(saved))
+      return saved;
+    var fresh = randomHex();
+    storeSet("slip.dev", fresh);
+    return fresh;
+  }
+  function randomHex() {
+    var bytes = [];
+    var i;
+    var c = window.crypto;
+    if (c && typeof c.getRandomValues === "function") {
+      var buf = new Uint8Array(8);
+      c.getRandomValues(buf);
+      for (i = 0; i < buf.length; i++)
+        bytes.push(buf[i]);
+    } else {
+      for (i = 0; i < 8; i++)
+        bytes.push(Math.floor(Math.random() * 256));
+    }
+    var out = "";
+    for (i = 0; i < bytes.length; i++)
+      out += (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16);
+    return out;
+  }
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = opts.headers || {};
+    headers["X-Slip"] = "1";
+    headers["X-Slip-Device"] = deviceTag();
+    opts.headers = headers;
+    opts.credentials = "same-origin";
+    return fetch(path, opts).then(function(res) {
+      var ct = res.headers.get("Content-Type") || "";
+      if (ct.indexOf("json") !== -1) {
+        return res.json().then(function(body) {
+          if (!res.ok) {
+            var err2 = new Error(body && body.error || "bad_request");
+            err2.code = body && body.error;
+            err2.status = res.status;
+            throw err2;
+          }
+          return body;
+        });
+      }
+      if (!res.ok) {
+        var err = new Error("bad_request");
+        err.code = "bad_request";
+        err.status = res.status;
+        throw err;
+      }
+      return null;
+    });
+  }
+  function postJSON(path, obj) {
+    return api(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(obj)
+    });
+  }
+  function codeErr(code) {
+    var err = new Error(code);
+    err.code = code;
+    return err;
+  }
+  function errText(err) {
+    if (!err || !err.code)
+      return t("errorNet");
+    var map = {
+      passphrase_too_short: "tooShort",
+      passphrase_too_long: "tooLong",
+      passphrase_mismatch: "mismatch",
+      wrong_passphrase: "wrong",
+      locked: "locked",
+      too_large: "tooBig",
+      text_too_large: "textTooBig",
+      quota: "quota",
+      empty: "emptyText",
+      unauthorized: "wrong",
+      setup_required: "waiting",
+      already_setup: "already",
+      forbidden: "forbidden",
+      wrong_code: "wrongCode",
+      code_too_short: "codeTooShort",
+      code_too_long: "tooLong",
+      code_required: "codeAsk",
+      secret_locked: "secretLocked",
+      gone: "errorGeneric",
+      not_found: "errorGeneric",
+      bad_request: "errorGeneric"
+    };
+    var key = err.code ? map[err.code] : "";
+    if (key)
+      return t(key);
+    return t("errorGeneric");
+  }
+
+  // ../.webuild/dom.js
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls)
+      node.className = cls;
+    if (text != null)
+      node.textContent = text;
+    return node;
+  }
+  function btn(label, fn, cls) {
+    var b = document.createElement("button");
+    if (cls)
+      b.className = cls;
+    b.type = "button";
+    b.textContent = label;
+    b.addEventListener("click", function() {
+      fn();
+    });
+    return b;
+  }
+  function clear(node) {
+    node.textContent = "";
   }
 
   // ../.webuild/clipboard.js
@@ -712,8 +817,10 @@
   // ../.webuild/board.js
   var fileCap = 50 * 1024 * 1024;
   var textCap = 200 * 1024;
+  var secretCap = 4 * 1024;
   var previewCap = 256 * 1024;
   var undoMillis = 8e3;
+  var revealMillis = 3e4;
   var textFoldLines = 12;
   function start(page, node) {
     var state = {
@@ -739,7 +846,20 @@
       viewer: null,
       previewText: {},
       errEl: null,
-      update: null
+      update: null,
+      secretOn: false,
+      secretBurn: true,
+      secretTTL: 24 * 60 * 60,
+      secretCode: "",
+      secretShow: false,
+      lastCode: "",
+      lastCodeShow: false,
+      revealed: {},
+      askCode: {},
+      codeDraft: {},
+      codeErr: {},
+      revealShow: {},
+      secretTimer: 0
     };
     var formEl = null;
     var writeEl = null;
@@ -1131,6 +1251,8 @@
           return false;
         if (!q)
           return true;
+        if (it.secret)
+          return false;
         if (it.kind === "text" && it.text)
           return it.text.toLowerCase().indexOf(q) !== -1;
         if (it.name)
@@ -1180,8 +1302,17 @@
         renderBoard();
     }
     function renderBoard() {
+      var y = window.pageYOffset;
       clear(node.main);
+      paintBoard();
+      window.scrollTo(0, y);
+      settlePrompt();
+    }
+    function paintBoard() {
       node.main.appendChild(composer());
+      var code = codeCard();
+      if (code)
+        node.main.appendChild(code);
       if (state.items.length || state.query.trim())
         node.main.appendChild(searchBar());
       if (!state.itemsLoaded) {
@@ -1209,6 +1340,23 @@
       if (state.hasMore && !state.query.trim() && !state.kindFilter) {
         node.main.appendChild(btn(t("loadMore"), loadMore, "textbtn more"));
         node.main.appendChild(loadMoreSentinel());
+      }
+    }
+    function settlePrompt() {
+      var box = document.querySelector(".codeprompt");
+      if (!box)
+        return;
+      var rect = box.getBoundingClientRect();
+      var view = window.innerHeight || document.documentElement.clientHeight || 0;
+      var target = window.pageYOffset + rect.top - Math.max(12, (view - rect.height) / 2);
+      window.scrollTo(0, target < 0 ? 0 : target);
+      var field = box.querySelector(".codeinput");
+      if (!field)
+        return;
+      try {
+        field.focus({ preventScroll: true });
+      } catch (e) {
+        field.focus();
       }
     }
     function renderBoardList(shown) {
@@ -1376,6 +1524,10 @@
       });
       var row = el("div", "row");
       var pick = btn(t("addFile"), function() {
+        if (state.secretOn) {
+          showNotice(t("secretTextOnly"));
+          return;
+        }
         file.click();
       }, "textbtn");
       var go = el("button", "seal", t("drop"));
@@ -1395,6 +1547,7 @@
       row.appendChild(go);
       form.appendChild(lab);
       form.appendChild(ta);
+      form.appendChild(secretOptions());
       form.appendChild(row);
       form.appendChild(file);
       var err = errorLine();
@@ -1407,6 +1560,146 @@
       writeEl = ta;
       dropBtn = go;
       return form;
+    }
+    function secretOptions() {
+      var wrap = el("div", "secretopts");
+      var line = el("label", "checkline");
+      var box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = state.secretOn;
+      box.addEventListener("change", function() {
+        state.secretOn = box.checked;
+        if (state.view === "board")
+          renderBoard();
+      });
+      line.appendChild(box);
+      line.appendChild(el("span", "checktext", t("secretToggle")));
+      line.appendChild(el("span", "hint checkhint", t("secretToggleHint")));
+      wrap.appendChild(line);
+      if (!state.secretOn) {
+        return wrap;
+      }
+      var burnLine = el("label", "checkline");
+      var burn = document.createElement("input");
+      burn.type = "checkbox";
+      burn.checked = state.secretBurn;
+      burn.addEventListener("change", function() {
+        state.secretBurn = burn.checked;
+      });
+      burnLine.appendChild(burn);
+      burnLine.appendChild(el("span", "checktext", t("burn")));
+      burnLine.appendChild(el("span", "hint checkhint", t("burnHint")));
+      wrap.appendChild(burnLine);
+      var keepLine = el("label", "checkline");
+      keepLine.appendChild(el("span", "checktext", t("ttlLabel")));
+      var sel = document.createElement("select");
+      var choices = [
+        { v: 600, label: t("ttl10") },
+        { v: 3600, label: t("ttl60") },
+        { v: 86400, label: t("ttl24") }
+      ];
+      var i;
+      for (i = 0; i < choices.length; i++) {
+        var o = document.createElement("option");
+        o.value = String(choices[i].v);
+        o.textContent = choices[i].label;
+        if (choices[i].v === state.secretTTL)
+          o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener("change", function() {
+        state.secretTTL = Number(sel.value) || 86400;
+      });
+      keepLine.appendChild(sel);
+      wrap.appendChild(keepLine);
+      var codeLine = el("div", "checkline codeline");
+      codeLine.appendChild(el("span", "checktext", t("code")));
+      var code = document.createElement("input");
+      code.type = state.secretShow ? "text" : "password";
+      code.className = "codeinput";
+      code.value = state.secretCode;
+      code.placeholder = t("codePlaceholder");
+      code.setAttribute("autocomplete", "off");
+      code.setAttribute("autocapitalize", "characters");
+      code.setAttribute("autocorrect", "off");
+      code.setAttribute("spellcheck", "false");
+      code.setAttribute("aria-label", t("code"));
+      code.addEventListener("input", function() {
+        state.secretCode = code.value;
+      });
+      var see = btn(state.secretShow ? t("hide") : t("show"), function() {
+        state.secretShow = !state.secretShow;
+        code.type = state.secretShow ? "text" : "password";
+        see.textContent = state.secretShow ? t("hide") : t("show");
+      }, "textbtn codetoggle");
+      see.setAttribute("aria-pressed", state.secretShow ? "true" : "false");
+      codeLine.appendChild(code);
+      codeLine.appendChild(see);
+      codeLine.appendChild(btn(t("codeGen"), function() {
+        state.secretCode = newCode();
+        state.secretShow = true;
+        if (state.view === "board")
+          renderBoard();
+      }, "textbtn"));
+      wrap.appendChild(codeLine);
+      if (state.secretCode.replace(/^\s+|\s+$/g, "")) {
+        wrap.appendChild(el("p", "hint codenote", t("codeNote")));
+      }
+      wrap.appendChild(el("p", "hint secretnote", t("secretNote")));
+      return wrap;
+    }
+    function codeCard() {
+      if (!state.lastCode)
+        return null;
+      var sheet = el("div", "sheet codecard");
+      var head = el("div", "codehead");
+      head.appendChild(el("span", "kindtag", t("code")));
+      var close = btn("×", function() {
+        state.lastCode = "";
+        state.lastCodeShow = false;
+        if (state.view === "board")
+          renderBoard();
+      }, "textbtn codeclose");
+      close.setAttribute("aria-label", t("close"));
+      head.appendChild(close);
+      sheet.appendChild(head);
+      var shown = state.lastCodeShow;
+      var line = el("div", "urlrow");
+      var value = el("div", shown ? "url codevalue" : "url codevalue is-masked", shown ? state.lastCode : "••••-••••");
+      line.appendChild(value);
+      line.appendChild(copyButton(state.lastCode));
+      var see = btn(shown ? t("hide") : t("show"), function() {
+        state.lastCodeShow = !state.lastCodeShow;
+        if (state.view === "board")
+          renderBoard();
+      }, "textbtn codetoggle");
+      see.setAttribute("aria-pressed", shown ? "true" : "false");
+      line.appendChild(see);
+      sheet.appendChild(line);
+      sheet.appendChild(el("p", "hint", t("codeOnce")));
+      return sheet;
+    }
+    function newCode() {
+      var alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+      var bytes = [];
+      var c = window.crypto;
+      var i;
+      if (c && typeof c.getRandomValues === "function") {
+        var buf = new Uint8Array(8);
+        c.getRandomValues(buf);
+        for (i = 0; i < 8; i++)
+          bytes.push(buf[i]);
+      } else {
+        for (i = 0; i < 8; i++)
+          bytes.push(Math.floor(Math.random() * 256));
+      }
+      var out = "";
+      for (i = 0; i < 8; i++) {
+        if (i === 4)
+          out += "-";
+        out += alphabet.charAt(bytes[i] % alphabet.length);
+      }
+      return out;
     }
     function hasFiles(e) {
       var dt = e.dataTransfer;
@@ -1463,19 +1756,44 @@
         showErr(codeErr("empty"));
         return;
       }
-      if (byteLength(text) > textCap) {
+      var cap = state.secretOn ? secretCap : textCap;
+      if (byteLength(text) > cap) {
         showErr(codeErr("text_too_large"));
         return;
       }
+      var code = state.secretCode.replace(/^\s+|\s+$/g, "");
+      if (state.secretOn && code && code.length < 6) {
+        showErr(codeErr("code_too_short"));
+        return;
+      }
+      var body = { text: text };
+      if (state.secretOn) {
+        body.secret = true;
+        body.burn = state.secretBurn;
+        body.ttl = state.secretTTL;
+        if (code)
+          body.code = code;
+      }
       run(button, t("drop"), function() {
-        return postJSON("/api/text", { text: text }).then(function() {
+        return postJSON("/api/text", body).then(function() {
+          if (body.code) {
+            state.lastCode = body.code;
+            state.lastCodeShow = false;
+          }
           state.draft = "";
+          state.secretOn = false;
+          state.secretShow = false;
+          state.secretCode = "";
           return reloadItems();
         });
       });
     }
     function sendFiles(files, button) {
       var i;
+      if (state.secretOn) {
+        showNotice(t("secretTextOnly"));
+        return;
+      }
       if (!files.length) {
         showErr(codeErr("empty"));
         return;
@@ -1607,11 +1925,56 @@
       var when = formatTime(it.createdAt);
       if (when)
         parts.push(when);
-      if (it.size && !short)
+      if (it.secret) {
+        if (it.sealed)
+          parts.push(t("secretSealed"));
+        if (it.takenAt)
+          parts.push(t("taken"));
+        else {
+          var left = leftText(it);
+          if (left)
+            parts.push(left);
+        }
+      } else if (it.size && !short) {
         parts.push(formatBytes(it.size));
+      }
       if (it.editedAt)
         parts.push(t("edited"));
       return parts.join(" · ");
+    }
+    function startSecretClock() {
+      if (state.secretTimer)
+        return;
+      state.secretTimer = setInterval(function() {
+        if (state.view !== "board")
+          return;
+        var i;
+        for (i = 0; i < state.items.length; i++) {
+          var it = state.items[i];
+          if (!it.secret || it.takenAt)
+            continue;
+          var line = document.querySelector('.slip[data-id="' + it.id + '"] .meta');
+          if (line)
+            line.textContent = metaText(it);
+        }
+      }, 3e4);
+    }
+    function leftText(it) {
+      if (!it.expiresAt)
+        return "";
+      var end = new Date(it.expiresAt).getTime();
+      if (isNaN(end))
+        return "";
+      var ms = end - (/* @__PURE__ */ new Date()).getTime();
+      if (ms <= 0)
+        return t("expired");
+      var min = Math.floor(ms / 6e4);
+      if (min < 60)
+        return tn("leftMin", min < 1 ? 1 : min);
+      var hours = Math.floor(min / 60);
+      if (hours < 24)
+        return tn("leftHour", hours);
+      return tn("leftDay", Math.round(hours / 24));
     }
     function narrowScreen() {
       return typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches;
@@ -1642,21 +2005,46 @@
     }
     function slipNode(it, newest, compact) {
       var id = safeID(it.id);
+      var secret = !!it.secret;
       var card = el("article", newest ? "slip is-new" : "slip");
-      card.setAttribute("data-kind", it.kind);
+      card.setAttribute("data-kind", secret ? "secret" : it.kind);
+      if (id)
+        card.setAttribute("data-id", id);
       var head = el("div", "sliphead");
-      var glyph = compact ? kindGlyph(it.kind).replace(" ", "") : kindGlyph(it.kind) + kindLabel(it.kind);
+      var tagLabel = secret ? t("secretKind") : kindLabel(it.kind);
+      var tagGlyph = secret ? "● " : kindGlyph(it.kind);
+      var glyph = compact ? tagGlyph.replace(" ", "") : tagGlyph + tagLabel;
       var kindTag = el("span", "kindtag", glyph);
       if (compact)
-        kindTag.setAttribute("title", kindLabel(it.kind));
+        kindTag.setAttribute("title", tagLabel);
       head.appendChild(kindTag);
       head.appendChild(el("span", "meta", metaText(it, compact)));
       var actions = [];
-      if (it.kind === "text") {
-        var copy_1 = btn(t("copy"), function() {
-          copyButtonText(it.text || "", copy_1);
+      if (secret) {
+        if (id && !it.takenAt) {
+          var shown = !!state.revealed[id];
+          if (shown) {
+            var copy_1 = btn(t("copy"), function() {
+              copyButtonText(state.revealed[id], copy_1);
+            }, "textbtn");
+            actions.push(copy_1);
+          }
+          actions.push(btn(shown ? t("previewClose") : t("open"), function() {
+            if (state.revealed[id]) {
+              delete state.revealed[id];
+            } else {
+              openSecret(it, id);
+              return;
+            }
+            if (state.view === "board")
+              renderBoard();
+          }, "textbtn"));
+        }
+      } else if (it.kind === "text") {
+        var copy_2 = btn(t("copy"), function() {
+          copyButtonText(it.text || "", copy_2);
         }, "textbtn");
-        actions.push(copy_1);
+        actions.push(copy_2);
       }
       if (it.kind !== "text" && id && previewable(it)) {
         var open_1 = !!state.openPreview[id];
@@ -1670,7 +2058,7 @@
           if (state.view === "board")
             renderBoard();
         }, "textbtn"));
-      } else if (it.kind === "text" && id && state.editing !== id && countLines(it.text || "") > textFoldLines) {
+      } else if (!secret && it.kind === "text" && id && state.editing !== id && countLines(it.text || "") > textFoldLines) {
         var open_2 = !!state.openText[id];
         actions.push(btn(open_2 ? t("previewClose") : t("previewOpen"), function() {
           if (state.openText[id]) {
@@ -1682,7 +2070,7 @@
             renderBoard();
         }, "textbtn"));
       }
-      if (it.kind === "text" && id && state.editing !== id) {
+      if (!secret && it.kind === "text" && id && state.editing !== id) {
         actions.push(btn(t("edit"), function() {
           state.editing = id;
           if (state.view === "board")
@@ -1706,7 +2094,9 @@
         }
       }, compact));
       card.appendChild(head);
-      if (it.kind === "text" && state.editing === id) {
+      if (secret) {
+        card.appendChild(secretBody(it, id));
+      } else if (it.kind === "text" && state.editing === id) {
         card.appendChild(textEditor(it, id));
       } else if (it.kind === "text") {
         card.appendChild(textBody(it, id));
@@ -1728,6 +2118,123 @@
         }
       }
       return card;
+    }
+    function secretBody(it, id) {
+      var shown = state.revealed[id];
+      if (shown) {
+        var wrap = el("div", "secretbody");
+        wrap.appendChild(el("pre", "body", shown));
+        wrap.appendChild(el("p", "hint", t("revealHides")));
+        return wrap;
+      }
+      if (it.takenAt) {
+        return el("p", "hint secretgone", t("takenBody"));
+      }
+      var box = el("div", "masked");
+      var dots = el("p", "dots", "● ● ● ● ● ●");
+      dots.setAttribute("aria-hidden", "true");
+      box.appendChild(dots);
+      box.appendChild(el("p", "hint", it.burn ? t("burnHint") : t("secretExpiresHint")));
+      if (state.askCode[id])
+        box.appendChild(codePrompt(it, id));
+      return box;
+    }
+    function codePrompt(it, id) {
+      var wrap = el("div", "codeprompt");
+      var input = document.createElement("input");
+      input.type = state.revealShow[id] ? "text" : "password";
+      input.className = "codeinput";
+      input.value = state.codeDraft[id] || "";
+      input.placeholder = t("codeAsk");
+      input.setAttribute("autocomplete", "off");
+      input.setAttribute("autocapitalize", "characters");
+      input.setAttribute("autocorrect", "off");
+      input.setAttribute("spellcheck", "false");
+      input.setAttribute("aria-label", t("codeAsk"));
+      input.addEventListener("input", function() {
+        state.codeDraft[id] = input.value;
+      });
+      var go = btn(t("open"), function() {
+        var code = (state.codeDraft[id] || "").replace(/^\s+|\s+$/g, "");
+        if (code.length < 6) {
+          state.codeErr[id] = t("codeTooShort");
+          if (state.view === "board")
+            renderBoard();
+          return;
+        }
+        revealSecret(it, id, code);
+      }, "textbtn");
+      input.addEventListener("keydown", function(e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          go.click();
+        }
+      });
+      var see = btn(state.revealShow[id] ? t("hide") : t("show"), function() {
+        state.revealShow[id] = !state.revealShow[id];
+        input.type = state.revealShow[id] ? "text" : "password";
+        see.textContent = state.revealShow[id] ? t("hide") : t("show");
+      }, "textbtn codetoggle");
+      wrap.appendChild(input);
+      wrap.appendChild(go);
+      wrap.appendChild(see);
+      if (state.codeErr[id])
+        wrap.appendChild(el("p", "hint codeerr", state.codeErr[id]));
+      return wrap;
+    }
+    function openSecret(it, id) {
+      if (it.sealed) {
+        state.askCode[id] = true;
+        if (state.view === "board")
+          renderBoard();
+        return;
+      }
+      revealSecret(it, id, "");
+    }
+    function revealSecret(it, id, code) {
+      postJSON("/api/items/" + id + "/reveal", { code: code }).then(function(body) {
+        state.revealed[id] = body.text || "";
+        delete state.askCode[id];
+        delete state.codeDraft[id];
+        delete state.codeErr[id];
+        delete state.revealShow[id];
+        if (body.burned) {
+          it.takenAt = (/* @__PURE__ */ new Date()).toISOString();
+          it.sealed = false;
+          it.burn = false;
+        }
+        if (state.view === "board")
+          renderBoard();
+        setTimeout(function() {
+          if (!state.revealed[id])
+            return;
+          delete state.revealed[id];
+          if (state.view === "board")
+            renderBoard();
+        }, revealMillis);
+      }, function(err) {
+        var code2 = err && err.code || "";
+        if (code2 === "wrong_code") {
+          state.codeErr[id] = t("wrongCode");
+          if (state.view === "board")
+            renderBoard();
+          return;
+        }
+        if (code2 === "code_required") {
+          state.askCode[id] = true;
+          if (state.view === "board")
+            renderBoard();
+          return;
+        }
+        if (code2 === "gone") {
+          delete state.revealed[id];
+          showNotice(t("secretGone"));
+          reloadItems();
+          return;
+        }
+        if (!guard(err))
+          showErr(err);
+      });
     }
     function textBody(it, id) {
       var body = el("pre", "body", it.text || "");
@@ -2007,6 +2514,12 @@
       });
     }
     function removeItem(id) {
+      var secret = false;
+      var i;
+      for (i = 0; i < state.items.length; i++) {
+        if (state.items[i].id === id && state.items[i].secret)
+          secret = true;
+      }
       api("/api/items/" + id, { method: "DELETE" }).then(function() {
         state.items = state.items.filter(function(it) {
           return it.id !== id;
@@ -2014,7 +2527,16 @@
         delete state.openPreview[id];
         delete state.openText[id];
         delete state.previewText[id];
-        queueUndo([id]);
+        delete state.revealed[id];
+        delete state.askCode[id];
+        delete state.codeDraft[id];
+        delete state.codeErr[id];
+        delete state.revealShow[id];
+        if (secret) {
+          say(t("secretRemoved"));
+        } else {
+          queueUndo([id]);
+        }
         if (state.view === "board")
           renderBoard();
       }).catch(function(err) {
@@ -2116,6 +2638,9 @@
         });
       });
       node.main.appendChild(form);
+      var about = el("div", "sheet");
+      about.appendChild(el("p", "hint", t("settingsSecret")));
+      node.main.appendChild(about);
       var danger = el("div", "sheet");
       var actions = el("div", "row split");
       var clearBtn = btn(state.confirmClear ? t("confirmClear") : t("clear"), function() {
@@ -2134,8 +2659,14 @@
             state.openPreview = {};
             state.openText = {};
             state.previewText = {};
+            state.revealed = {};
+            state.askCode = {};
+            state.codeDraft = {};
+            state.codeErr = {};
             state.view = "board";
-            queueUndo(body.ids || []);
+            var ids = body.ids || [];
+            if (ids.length)
+              queueUndo(ids);
             say(t("cleared"));
             route();
           });
@@ -2206,6 +2737,7 @@
     }
     installDragHandlers();
     installKeys();
+    startSecretClock();
     closeMenus();
     applyChrome();
     paintNav();

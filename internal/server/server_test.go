@@ -16,6 +16,7 @@ import (
 
 	"github.com/obetame/slip/internal/auth"
 	"github.com/obetame/slip/internal/config"
+	"github.com/obetame/slip/internal/seal"
 	"github.com/obetame/slip/internal/session"
 	"github.com/obetame/slip/internal/store"
 )
@@ -333,6 +334,7 @@ func newTest(t *testing.T) (*Server, *store.Store) {
 	}
 	s := New(st, cfg, book, auth.Params{Time: 1, Memory: 64, Threads: 1}, "0.1.0")
 	s.SetPort(8787)
+	s.SetSealCost(seal.Cost{Time: 1, Memory: 64, Threads: 1})
 	return s, st
 }
 
@@ -508,5 +510,269 @@ func TestEditItem(t *testing.T) {
 	if rr := call(t, s, http.MethodPatch, "/api/items/0123456789abcdef", loopback, token,
 		strings.NewReader(`{"text":"x"}`), jsonHdr); rr.Code != http.StatusNotFound {
 		t.Fatalf("unknown id %d", rr.Code)
+	}
+}
+
+// ---- secret slips --------------------------------------------------------
+
+type secretJSON struct {
+	ID        string `json:"id"`
+	Text      string `json:"text"`
+	Secret    bool   `json:"secret"`
+	Sealed    bool   `json:"sealed"`
+	Burn      bool   `json:"burn"`
+	ExpiresAt string `json:"expiresAt"`
+	TakenAt   string `json:"takenAt"`
+}
+
+func postDevice(t *testing.T, s *Server, path, token, body, device string) *httptest.ResponseRecorder {
+	t.Helper()
+	hdr := http.Header{
+		"Content-Type": []string{"application/json"},
+		"X-Slip":       []string{"1"},
+	}
+	if device != "" {
+		hdr.Set("X-Slip-Device", device)
+	}
+	return call(t, s, http.MethodPost, path, loopback, token, strings.NewReader(body), hdr)
+}
+
+func createSecret(t *testing.T, s *Server, token, body string) string {
+	t.Helper()
+	rr := postDevice(t, s, "/api/text", token, body, "aaaaaaaa1")
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create %d %s", rr.Code, rr.Body.String())
+	}
+	var created struct {
+		Item secretJSON `json:"item"`
+	}
+	decode(t, rr, &created)
+	return created.Item.ID
+}
+
+// TestSealedSecretNeverLeaks is the whole point of the feature: the list is
+// what every browser loads on refresh, so a body that appears there is not
+// hidden at all, and a code that appears there is not a lock.
+func TestSealedSecretNeverLeaks(t *testing.T) {
+	s, st := newTest(t)
+	token := setupPass(t, s)
+	cur := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	st.SetClock(func() time.Time { return cur })
+	s.SetClock(func() time.Time { return cur })
+
+	rr := postDevice(t, s, "/api/text", token,
+		`{"text":"ghp_live_9x2","secret":true,"ttl":900,"burn":true,"code":"K7QM-3XPD"}`, "aaaaaaaa1")
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create %d %s", rr.Code, rr.Body.String())
+	}
+	var created struct {
+		Item secretJSON `json:"item"`
+	}
+	decode(t, rr, &created)
+	it := created.Item
+	if !it.Secret || !it.Sealed || !it.Burn || it.ExpiresAt == "" {
+		t.Fatalf("created %+v", it)
+	}
+	if it.Text != "" {
+		t.Fatalf("create echoed the body: %q", it.Text)
+	}
+
+	rr = call(t, s, http.MethodGet, "/api/items", loopback, token, nil, nil)
+	var page struct {
+		Items []secretJSON `json:"items"`
+	}
+	decode(t, rr, &page)
+	if len(page.Items) != 1 {
+		t.Fatalf("list %+v", page.Items)
+	}
+	if page.Items[0].Text != "" || !page.Items[0].Sealed {
+		t.Fatalf("list leaked the body: %+v", page.Items[0])
+	}
+	if strings.Contains(rr.Body.String(), "ghp_live_9x2") {
+		t.Fatal("the token appears in the list JSON")
+	}
+
+	// A sealed slip cannot be read without its code.
+	rr = postDevice(t, s, "/api/items/"+it.ID+"/reveal", token, `{}`, "aaaaaaaa1")
+	if rr.Code != http.StatusBadRequest || errCode(t, rr) != "code_required" {
+		t.Fatalf("no code %d %s", rr.Code, rr.Body.String())
+	}
+	rr = postDevice(t, s, "/api/items/"+it.ID+"/reveal", token, `{"code":"ZZZZ-ZZZZ"}`, "aaaaaaaa1")
+	if rr.Code != http.StatusUnauthorized || errCode(t, rr) != "wrong_code" {
+		t.Fatalf("wrong code %d %s", rr.Code, rr.Body.String())
+	}
+
+	// The browser that put it down may read it again: burned is false and the
+	// slip is still there.
+	rr = postDevice(t, s, "/api/items/"+it.ID+"/reveal", token, `{"code":"K7QM-3XPD"}`, "aaaaaaaa1")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("reveal %d %s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		Text   string `json:"text"`
+		Burned bool   `json:"burned"`
+	}
+	decode(t, rr, &got)
+	if got.Text != "ghp_live_9x2" || got.Burned {
+		t.Fatalf("reveal %+v", got)
+	}
+
+	// Another browser takes it away.
+	rr = postDevice(t, s, "/api/items/"+it.ID+"/reveal", token, `{"code":"K7QM-3XPD"}`, "bbbbbbbb2")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("take %d %s", rr.Code, rr.Body.String())
+	}
+	decode(t, rr, &got)
+	if got.Text != "ghp_live_9x2" || !got.Burned {
+		t.Fatalf("take %+v", got)
+	}
+
+	// What is left is a tombstone: a time, and nothing to read.
+	rr = postDevice(t, s, "/api/items/"+it.ID+"/reveal", token, `{"code":"K7QM-3XPD"}`, "cccccccc3")
+	if rr.Code != http.StatusGone {
+		t.Fatalf("second take %d %s", rr.Code, rr.Body.String())
+	}
+	rr = call(t, s, http.MethodGet, "/api/items", loopback, token, nil, nil)
+	decode(t, rr, &page)
+	if len(page.Items) != 1 || page.Items[0].TakenAt == "" {
+		t.Fatalf("tombstone %+v", page.Items)
+	}
+	if strings.Contains(rr.Body.String(), "ghp_live_9x2") {
+		t.Fatal("the token survived the burn in the list")
+	}
+}
+
+// TestUnsealedSecretHidesButDoesNotLock covers the lighter choice: the body is
+// only kept out of the list, and the board still hands it over on demand.
+func TestUnsealedSecretHidesButDoesNotLock(t *testing.T) {
+	s, st := newTest(t)
+	token := setupPass(t, s)
+	fixed := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	st.SetClock(func() time.Time { return fixed })
+	s.SetClock(func() time.Time { return fixed })
+
+	id := createSecret(t, s, token, `{"text":"hunter2","secret":true,"ttl":60}`)
+
+	rr := call(t, s, http.MethodGet, "/api/items", loopback, token, nil, nil)
+	var page struct {
+		Items []secretJSON `json:"items"`
+	}
+	decode(t, rr, &page)
+	if len(page.Items) != 1 || page.Items[0].Text != "" || page.Items[0].Sealed {
+		t.Fatalf("list %+v", page.Items)
+	}
+
+	// No body at all is fine for a slip with no code.
+	rr = call(t, s, http.MethodPost, "/api/items/"+id+"/reveal", loopback, token, nil,
+		http.Header{"X-Slip": []string{"1"}})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("reveal %d %s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		Text string `json:"text"`
+	}
+	decode(t, rr, &got)
+	if got.Text != "hunter2" {
+		t.Fatalf("reveal %+v", got)
+	}
+}
+
+func TestSecretWrongCodesDestroyIt(t *testing.T) {
+	s, _ := newTest(t)
+	token := setupPass(t, s)
+	id := createSecret(t, s, token, `{"text":"tok","secret":true,"ttl":600,"code":"K7QM-3XPD"}`)
+
+	for i := 1; i < store.MaxWrong; i++ {
+		rr := postDevice(t, s, "/api/items/"+id+"/reveal", token, `{"code":"ZZZZ-ZZZZ"}`, "aaaaaaaa1")
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("try %d: %d %s", i, rr.Code, rr.Body.String())
+		}
+	}
+	rr := postDevice(t, s, "/api/items/"+id+"/reveal", token, `{"code":"ZZZZ-ZZZZ"}`, "aaaaaaaa1")
+	if rr.Code != http.StatusGone {
+		t.Fatalf("last try %d %s, want the slip destroyed", rr.Code, rr.Body.String())
+	}
+	// Even the correct code is too late.
+	rr = postDevice(t, s, "/api/items/"+id+"/reveal", token, `{"code":"K7QM-3XPD"}`, "aaaaaaaa1")
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("after the limit %d", rr.Code)
+	}
+}
+
+func TestRevealRefusesAnOrdinarySlip(t *testing.T) {
+	s, _ := newTest(t)
+	token := setupPass(t, s)
+	rr := postJSON(t, s, "/api/text", loopback, token, `{"text":"ordinary"}`)
+	var created struct {
+		Item secretJSON `json:"item"`
+	}
+	decode(t, rr, &created)
+
+	rr = postDevice(t, s, "/api/items/"+created.Item.ID+"/reveal", token, `{}`, "aaaaaaaa1")
+	if rr.Code != http.StatusBadRequest || errCode(t, rr) != "not_secret" {
+		t.Fatalf("ordinary reveal %d %s", rr.Code, rr.Body.String())
+	}
+	rr = postDevice(t, s, "/api/items/0123456789abcdef/reveal", token, `{}`, "aaaaaaaa1")
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("unknown %d", rr.Code)
+	}
+}
+
+func TestSecretIsNotEditableAndNotUndoable(t *testing.T) {
+	s, _ := newTest(t)
+	token := setupPass(t, s)
+	id := createSecret(t, s, token, `{"text":"tok","secret":true,"ttl":600}`)
+
+	rr := call(t, s, http.MethodPatch, "/api/items/"+id, loopback, token,
+		strings.NewReader(`{"text":"rewritten"}`), http.Header{
+			"Content-Type": []string{"application/json"},
+			"X-Slip":       []string{"1"},
+		})
+	if rr.Code != http.StatusBadRequest || errCode(t, rr) != "secret_locked" {
+		t.Fatalf("edit %d %s", rr.Code, rr.Body.String())
+	}
+
+	// Deleting a secret is final: no ids come back for the undo bar to hold.
+	rr = call(t, s, http.MethodDelete, "/api/items/"+id, loopback, token, nil,
+		http.Header{"X-Slip": []string{"1"}})
+	if rr.Code != http.StatusOK {
+		t.Fatalf("delete %d %s", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	decode(t, rr, &body)
+	if len(body.IDs) != 0 {
+		t.Fatalf("secret offered an undo: %v", body.IDs)
+	}
+	rr = call(t, s, http.MethodGet, "/api/items/"+id+"/raw", loopback, token, nil, nil)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("secret still readable: %d", rr.Code)
+	}
+}
+
+func TestSecretExpiryOverHTTP(t *testing.T) {
+	s, st := newTest(t)
+	token := setupPass(t, s)
+	cur := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	st.SetClock(func() time.Time { return cur })
+
+	id := createSecret(t, s, token, `{"text":"tok","secret":true,"ttl":60}`)
+	cur = cur.Add(61 * time.Second)
+
+	// The janitor runs every five seconds; the handler does not wait for it.
+	rr := call(t, s, http.MethodPost, "/api/items/"+id+"/reveal", loopback, token, nil,
+		http.Header{"X-Slip": []string{"1"}})
+	if rr.Code != http.StatusGone {
+		t.Fatalf("expired reveal %d %s", rr.Code, rr.Body.String())
+	}
+	st.Purge()
+	rr = call(t, s, http.MethodGet, "/api/items", loopback, token, nil, nil)
+	var page struct {
+		Items []secretJSON `json:"items"`
+	}
+	decode(t, rr, &page)
+	if len(page.Items) != 0 {
+		t.Fatalf("expired slip still listed: %+v", page.Items)
 	}
 }

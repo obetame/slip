@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"log"
 	"net/http"
@@ -9,7 +11,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/obetame/slip/internal/seal"
 	"github.com/obetame/slip/internal/store"
 	"github.com/obetame/slip/internal/thumb"
 )
@@ -40,6 +44,13 @@ func (s *Server) createText(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Text string `json:"text"`
+		// Secret asks for a slip that hides its body and goes away. TTL is
+		// seconds, Burn is "the other browser takes it", and Code, when it
+		// is set, means the body is stored as ciphertext.
+		Secret bool   `json:"secret"`
+		TTL    int    `json:"ttl"`
+		Burn   bool   `json:"burn"`
+		Code   string `json:"code"`
 	}
 	if err := readJSON(w, r, &body, int64(store.MaxText)*4+8192); err != nil {
 		if tooLarge(err) {
@@ -47,6 +58,10 @@ func (s *Server) createText(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSONErr(w, err)
+		return
+	}
+	if body.Secret {
+		s.createSecret(w, r, body.Text, body.Code, body.TTL, body.Burn)
 		return
 	}
 	it, err := s.store.AddText(body.Text)
@@ -59,6 +74,134 @@ func (s *Server) createText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"item": it.Public()})
+}
+
+// createSecret stores a slip that must not show up on the board. A code makes
+// the body ciphertext: the server keeps the material that opens it and never
+// the code, so reading it back is the only way in.
+func (s *Server) createSecret(w http.ResponseWriter, r *http.Request, text, code string, ttl int, burn bool) {
+	if len(text) > store.MaxSecret {
+		writeErr(w, http.StatusRequestEntityTooLarge, "text_too_large")
+		return
+	}
+	code = strings.TrimSpace(code)
+	var wrapped *seal.Wrapped
+	if code != "" {
+		if err := seal.CheckCode(code); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if strings.TrimSpace(text) == "" {
+			writeErr(w, http.StatusBadRequest, "empty")
+			return
+		}
+		var err error
+		wrapped, err = seal.Wrap(s.sealCost, code, []byte(text))
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "bad_request")
+			return
+		}
+		// The body now lives as ciphertext. Keeping the plaintext in the
+		// item as well would defeat the point.
+		text = ""
+	}
+	it, err := s.store.AddSecret(text, wrapped, deviceTag(r), time.Duration(ttl)*time.Second, burn)
+	if err == store.ErrTooLarge {
+		writeErr(w, http.StatusRequestEntityTooLarge, "text_too_large")
+		return
+	}
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"item": it.Public()})
+}
+
+// reveal is the only way to read a secret slip. It is a POST because it
+// changes the slip: the read is counted, a burn slip is taken, and a wrong
+// code is one step closer to the slip being destroyed.
+func (s *Server) reveal(w http.ResponseWriter, r *http.Request) {
+	if !requireWrite(w, r) || !s.requireAuth(w, r) {
+		return
+	}
+	var body struct {
+		Code string `json:"code"`
+	}
+	if r.ContentLength > 0 {
+		if err := readJSON(w, r, &body, 8<<10); err != nil {
+			writeJSONErr(w, err)
+			return
+		}
+	}
+	it, err := s.store.Get(r.PathValue("id"))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	if !it.Secret {
+		writeErr(w, http.StatusBadRequest, "not_secret")
+		return
+	}
+	if it.TakenAt != nil {
+		writeErr(w, http.StatusGone, "gone")
+		return
+	}
+	if it.ExpiresAt != nil && !s.now().Before(*it.ExpiresAt) {
+		writeErr(w, http.StatusGone, "gone")
+		return
+	}
+	text := it.Text
+	if it.Wrapped != nil {
+		code := strings.TrimSpace(body.Code)
+		if code == "" {
+			writeErr(w, http.StatusBadRequest, "code_required")
+			return
+		}
+		plain, openErr := seal.Open(s.sealCost, code, it.Wrapped)
+		if openErr != nil {
+			destroyed, noteErr := s.store.NoteWrong(it.ID)
+			if noteErr != nil {
+				writeErr(w, http.StatusInternalServerError, "bad_request")
+				return
+			}
+			if destroyed {
+				writeErr(w, http.StatusGone, "gone")
+				return
+			}
+			writeErr(w, http.StatusUnauthorized, "wrong_code")
+			return
+		}
+		text = string(plain)
+	}
+	burned, err := s.store.Take(it.ID, deviceTag(r))
+	if err != nil {
+		writeStoreErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"text": text, "burned": burned})
+}
+
+// deviceTag names the browser that put a slip down, so a burn slip can tell
+// the browser that wrote it from one that came to read it. It is not an
+// identity and not a defence: anyone may send any value. The point is that a
+// refresh on the same phone does not burn the token you just pasted on your
+// laptop, while a different browser does.
+func deviceTag(r *http.Request) string {
+	v := strings.TrimSpace(r.Header.Get("X-Slip-Device"))
+	if len(v) < 8 || len(v) > 64 {
+		return ""
+	}
+	for _, c := range v {
+		switch {
+		case c >= '0' && c <= '9':
+		case c >= 'a' && c <= 'f':
+		case c >= 'A' && c <= 'F':
+		default:
+			return ""
+		}
+	}
+	sum := sha256.Sum256([]byte("slip-device:" + v))
+	return hex.EncodeToString(sum[:8])
 }
 
 func (s *Server) upload(w http.ResponseWriter, r *http.Request) {
@@ -289,6 +432,8 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusGone, "gone")
 	case err == store.ErrNotText:
 		writeErr(w, http.StatusBadRequest, "not_text")
+	case err == store.ErrSecret:
+		writeErr(w, http.StatusBadRequest, "secret_locked")
 	default:
 		writeErr(w, http.StatusInternalServerError, "bad_request")
 	}

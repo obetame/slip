@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/obetame/slip/internal/seal"
 )
 
 const (
@@ -22,6 +24,25 @@ const (
 	// UndoWindow is longer than the 8 second button so a slow phone
 	// can still restore after the bar has appeared.
 	UndoWindow = 60 * time.Second
+
+	// MaxSecret caps a secret body. A token or a password is bytes, not a
+	// document, and a low ceiling is what lets a sealed slip keep its
+	// ciphertext inline in items.json.
+	MaxSecret = 4 << 10
+	// MaxWrong is how many wrong codes a sealed slip tolerates. The tenth
+	// destroys it, which turns online guessing into a dead end instead of a
+	// slow leak. The counter lives in items.json so a restart does not
+	// hand an attacker a fresh ten tries.
+	MaxWrong = 10
+
+	// MinSecretTTL and MaxSecretTTL bound what a browser may ask for.
+	// DefaultSecretTTL is what it gets when it asks for nothing.
+	MinSecretTTL     = time.Minute
+	MaxSecretTTL     = 7 * 24 * time.Hour
+	DefaultSecretTTL = 24 * time.Hour
+	// TombstoneTTL is how long the sender can still see that a burn slip
+	// was taken. Only the time survives; the body is gone.
+	TombstoneTTL = time.Hour
 )
 
 const (
@@ -37,6 +58,10 @@ var (
 	ErrEmpty    = errors.New("empty")
 	ErrGone     = errors.New("gone")
 	ErrNotText  = errors.New("not_text")
+	// ErrSecret refuses an edit. A secret slip is written once and read
+	// once; rewriting the body from a browser would let a slip that was
+	// about to expire come back to life.
+	ErrSecret = errors.New("secret_locked")
 )
 
 // Item is one slip. Blob is the sha256 of a file body and is not sent
@@ -53,6 +78,17 @@ type Item struct {
 	Mime      string     `json:"mime,omitempty"`
 	Blob      string     `json:"blob,omitempty"`
 	HasThumb  bool       `json:"hasThumb,omitempty"`
+
+	// A secret slip is a text slip that does not show its body in the list
+	// and that goes away on its own. Wrapped means the body is ciphertext:
+	// the material that opens it is here, the code that opens it is not.
+	Secret    bool          `json:"secret,omitempty"`
+	ExpiresAt *time.Time    `json:"expiresAt,omitempty"`
+	Burn      bool          `json:"burn,omitempty"`
+	TakenAt   *time.Time    `json:"takenAt,omitempty"`
+	Wrapped   *seal.Wrapped `json:"wrapped,omitempty"`
+	Wrong     int           `json:"wrong,omitempty"`
+	Tag       string        `json:"tag,omitempty"`
 }
 
 // Public is the browser view of an item.
@@ -66,13 +102,29 @@ type Public struct {
 	Size      int64      `json:"size,omitempty"`
 	Mime      string     `json:"mime,omitempty"`
 	HasThumb  bool       `json:"hasThumb,omitempty"`
+
+	// Secret, Sealed, ExpiresAt, Burn and TakenAt describe a secret slip
+	// without describing what is in it.
+	Secret    bool       `json:"secret,omitempty"`
+	Sealed    bool       `json:"sealed,omitempty"`
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	Burn      bool       `json:"burn,omitempty"`
+	TakenAt   *time.Time `json:"takenAt,omitempty"`
 }
 
 func (it Item) Public() Public {
-	return Public{
+	p := Public{
 		ID: it.ID, Kind: it.Kind, CreatedAt: it.CreatedAt, EditedAt: it.EditedAt,
-		Text: it.Text, Name: it.Name, Size: it.Size, Mime: it.Mime, HasThumb: it.HasThumb,
+		Name: it.Name, Size: it.Size, Mime: it.Mime, HasThumb: it.HasThumb,
+		Secret: it.Secret, Sealed: it.Wrapped != nil,
+		ExpiresAt: it.ExpiresAt, Burn: it.Burn, TakenAt: it.TakenAt,
 	}
+	// The body of a secret slip never appears in the list. The only way to
+	// read one is reveal, which is where the read is counted.
+	if !it.Secret {
+		p.Text = it.Text
+	}
+	return p
 }
 
 // Store keeps slips in one JSON file plus content-addressed blobs.
@@ -175,6 +227,110 @@ func (s *Store) AddText(text string) (Item, error) {
 	return it, nil
 }
 
+// AddSecret stores a body that must not appear on the board. wrapped is nil
+// for a slip that only hides its body; otherwise text is empty and the body is
+// already ciphertext. The slip always carries an expiry: a secret that lives
+// forever is the risk this exists to remove.
+func (s *Store) AddSecret(text string, wrapped *seal.Wrapped, tag string, ttl time.Duration, burn bool) (Item, error) {
+	if wrapped == nil && (strings.TrimSpace(text) == "" || !utf8.ValidString(text)) {
+		return Item{}, ErrEmpty
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// A ciphertext is the body plus the 16 byte GCM tag.
+	if len(text) > MaxSecret || (wrapped != nil && len(wrapped.CT) > MaxSecret+16) {
+		return Item{}, ErrTooLarge
+	}
+	switch {
+	case ttl <= 0:
+		ttl = DefaultSecretTTL
+	case ttl < MinSecretTTL:
+		ttl = MinSecretTTL
+	case ttl > MaxSecretTTL:
+		ttl = MaxSecretTTL
+	}
+	now := s.now().UTC()
+	exp := now.Add(ttl)
+	it := Item{
+		ID:        newID(),
+		Kind:      KindText,
+		CreatedAt: now,
+		Text:      text,
+		Secret:    true,
+		ExpiresAt: &exp,
+		Burn:      burn,
+		Wrapped:   wrapped,
+		Tag:       tag,
+	}
+	s.items = append(s.items, it)
+	if err := s.saveLocked(); err != nil {
+		s.items = s.items[:len(s.items)-1]
+		return Item{}, err
+	}
+	return it, nil
+}
+
+// Take records that a browser read a secret slip. A burn slip becomes a
+// tombstone when the reader is not the browser that put it down, and burned
+// says so. The body is already in the caller's hands by then: this only
+// decides what stays behind.
+func (s *Store) Take(id, tag string) (burned bool, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.items {
+		it := &s.items[i]
+		if it.ID != id || !it.Secret || it.DeletedAt != nil {
+			continue
+		}
+		if it.TakenAt != nil {
+			return false, ErrGone
+		}
+		burned = it.Burn && (it.Tag == "" || it.Tag != tag)
+		it.Wrong = 0
+		if burned {
+			now := s.now().UTC()
+			exp := now.Add(TombstoneTTL)
+			it.Text = ""
+			it.Wrapped = nil
+			it.Burn = false
+			it.TakenAt = &now
+			it.ExpiresAt = &exp
+		}
+		if err := s.saveLocked(); err != nil {
+			return false, err
+		}
+		return burned, nil
+	}
+	return false, ErrNotFound
+}
+
+// NoteWrong counts a code that did not open. The slip is destroyed at
+// MaxWrong, so guessing is a way to lose the slip rather than a way to win it.
+func (s *Store) NoteWrong(id string) (destroyed bool, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.items {
+		it := &s.items[i]
+		if it.ID != id || it.DeletedAt != nil {
+			continue
+		}
+		it.Wrong++
+		if it.Wrong >= MaxWrong {
+			s.items = append(s.items[:i], s.items[i+1:]...)
+			s.sweepLocked()
+			if err := s.saveLocked(); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+		if err := s.saveLocked(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	return false, ErrNotFound
+}
+
 // EditText replaces the body of a text slip. The slip keeps its place in
 // the stack and its original CreatedAt, so editing does not reshuffle the
 // board; EditedAt records when the body last changed. Only text slips can
@@ -195,6 +351,9 @@ func (s *Store) EditText(id, text string) (Item, error) {
 		}
 		if it.Kind != KindText {
 			return Item{}, ErrNotText
+		}
+		if it.Secret {
+			return Item{}, ErrSecret
 		}
 		prevText, prevEdited := it.Text, it.EditedAt
 		now := s.now().UTC()
@@ -350,6 +509,10 @@ func (s *Store) ThumbPath(it Item) (string, error) {
 	return filepath.Join(s.dir, "thumbs", it.Blob+".jpg"), nil
 }
 
+// SoftDelete hides slips for the undo window. A secret is not offered an undo:
+// the bar says the bytes are still there, and that is the one thing a secret
+// should not promise. It is dropped at once, and the ids it returns are only
+// the ones that can still be restored.
 func (s *Store) SoftDelete(ids []string) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -361,15 +524,27 @@ func (s *Store) SoftDelete(ids []string) ([]string, error) {
 		}
 	}
 	var done []string
+	kept := make([]Item, 0, len(s.items))
+	sweep := false
 	for i := range s.items {
-		if s.items[i].DeletedAt == nil && want[s.items[i].ID] {
+		it := s.items[i]
+		if it.DeletedAt == nil && want[it.ID] {
+			if it.Secret {
+				sweep = true
+				continue
+			}
 			t := now
-			s.items[i].DeletedAt = &t
-			done = append(done, s.items[i].ID)
+			it.DeletedAt = &t
+			done = append(done, it.ID)
 		}
+		kept = append(kept, it)
 	}
-	if len(done) == 0 {
+	if len(done) == 0 && !sweep {
 		return nil, ErrNotFound
+	}
+	s.items = kept
+	if sweep {
+		s.sweepLocked()
 	}
 	if err := s.saveLocked(); err != nil {
 		return nil, err
@@ -377,20 +552,36 @@ func (s *Store) SoftDelete(ids []string) ([]string, error) {
 	return done, nil
 }
 
+// SoftDeleteAll clears the board. Secrets are destroyed; everything else waits
+// out the undo window.
 func (s *Store) SoftDeleteAll() ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now().UTC()
 	var done []string
+	kept := make([]Item, 0, len(s.items))
+	sweep := false
 	for i := range s.items {
-		if s.items[i].DeletedAt == nil {
-			t := now
-			s.items[i].DeletedAt = &t
-			done = append(done, s.items[i].ID)
+		it := s.items[i]
+		if it.DeletedAt != nil {
+			kept = append(kept, it)
+			continue
 		}
+		if it.Secret {
+			sweep = true
+			continue
+		}
+		t := now
+		it.DeletedAt = &t
+		done = append(done, it.ID)
+		kept = append(kept, it)
 	}
-	if len(done) == 0 {
+	if len(done) == 0 && !sweep {
 		return []string{}, nil
+	}
+	s.items = kept
+	if sweep {
+		s.sweepLocked()
 	}
 	if err := s.saveLocked(); err != nil {
 		return nil, err
@@ -433,12 +624,19 @@ func (s *Store) Purge() {
 	s.purgeLocked()
 }
 
+// purgeLocked drops slips whose undo window has passed and secrets whose time
+// is up. An expired secret is removed outright: it was never waiting on an
+// undo, and the whole point of the expiry is that the bytes stop existing.
 func (s *Store) purgeLocked() {
 	now := s.now()
 	keep := make([]Item, 0, len(s.items))
 	changed := false
 	for _, it := range s.items {
 		if it.DeletedAt != nil && now.Sub(*it.DeletedAt) > s.undo {
+			changed = true
+			continue
+		}
+		if it.ExpiresAt != nil && !now.Before(*it.ExpiresAt) {
 			changed = true
 			continue
 		}

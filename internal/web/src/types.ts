@@ -20,6 +20,20 @@ export interface Item {
   size?: number;
   mime?: string;
   hasThumb?: boolean;
+  // A secret slip never carries its body here. Sealed means the body is
+  // ciphertext, so reading it needs the code that opened it. TakenAt marks
+  // the tombstone a burn slip leaves behind.
+  secret?: boolean;
+  sealed?: boolean;
+  expiresAt?: string;
+  burn?: boolean;
+  takenAt?: string;
+}
+
+// RevealBody is what POST /api/items/{id}/reveal answers with.
+export interface RevealBody {
+  text: string;
+  burned: boolean;
 }
 
 export interface Bootstrap {

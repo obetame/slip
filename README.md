@@ -74,10 +74,24 @@ The data directory defaults to `~/Library/Application Support/slip` on macOS. Fi
 | -------------- | ---------------------------------------------------- |
 | One file       | 50 MB                                                |
 | One text slip  | 200 KB                                               |
+| One secret     | 4 KB                                                 |
 | Data directory | 5 GB                                                 |
 | Passphrase     | 6 to 200 characters, stored only as an Argon2id hash |
 
 Pictures can be viewed and downloaded. Other files are downloaded. PDF files can also be viewed. Text stays selectable, and the copy button copies the whole slip.
+
+## Secrets
+
+A slip can be marked as a secret when it is written. Its body stays out of the
+board until someone opens it, it expires, and it can burn once another device
+has read it.
+
+Add a code and the body is written to disk as ciphertext. The code is stored
+nowhere, so a lost code means a lost slip, and ten wrong tries destroy it.
+
+A code protects a stolen data directory, not the network. The page is HTTP, so
+anyone who can see the traffic sees the body when it is put down and again when
+it is read. Do not keep anything here that must not survive on disk.
 
 ## Older iPads
 
