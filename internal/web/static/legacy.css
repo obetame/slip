@@ -610,8 +610,8 @@ textarea.editor-input:focus {
   margin: 0 0 5px;
 }
 
-.fieldlabel { float: left; font-size: 12px; color: var(--muted); }
-.fieldaside { float: right; font-size: 12px; color: var(--muted); }
+.fieldlabel { margin-right: 6px; font-size: 12px; color: var(--muted); }
+.fieldaside { font-size: 12px; color: var(--muted); }
 
 /* The field and its actions are one control: one border, one height,
    dividers inside. */

@@ -969,11 +969,12 @@ textarea.editor-input:focus { outline: none; }
 .optfieldhead {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   margin: 0 0 5px;
 }
 
-.fieldlabel { font-size: 12px; color: var(--muted); }
+/* "Optional" belongs to the word it qualifies, not to the far edge of the
+   sheet: pushed apart, the two read as unrelated labels. */
+.fieldlabel { margin-right: 6px; font-size: 12px; color: var(--muted); }
 .fieldaside { font-size: 12px; color: var(--muted); }
 
 /* The field and its actions are one control: one border, one height,
