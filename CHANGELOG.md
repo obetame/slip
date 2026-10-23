@@ -39,8 +39,8 @@ carries that version's section, so the notes and this file cannot drift.
   38px tall, instead of a 44px box standing beside 13px text.
 - Checkboxes take the seal colour instead of the system blue.
 - Retention is three chips rather than a popup, so no native control renders
-  at 16px in a row of 13px labels, and a hidden slip shows three struck-out
-  lines instead of six solid dots.
+  at 16px in a row of 13px labels, and a hidden slip shows one short
+  struck-out bar instead of six solid dots.
 
 ### Notes
 

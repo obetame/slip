@@ -1082,22 +1082,19 @@ textarea.editor-input:focus { outline: none; }
 
 .masked { padding: 8px 0 2px; }
 
-/* Three struck-out lines instead of six solid dots: dots read as a password
-   field, and at 13px with open tracking they were the heaviest thing in the
-   card. Bars read as text with something blacked out, which is what this is. */
+/* One short struck-out bar instead of six solid dots. Dots read as a
+   password field, and a stack of bars reads as a loading skeleton; a single
+   short block reads as a short piece of text that was blacked out, which is
+   what a token is. */
 .redact { margin: 0 0 9px; }
 
 .redactline {
   display: block;
-  height: 5px;
-  margin-bottom: 5px;
+  width: 44px;
+  height: 6px;
   border-radius: 2px;
   background: var(--line);
 }
-
-.redact span:nth-child(1) { width: 68%; }
-.redact span:nth-child(2) { width: 46%; }
-.redact span:nth-child(3) { width: 30%; margin-bottom: 0; }
 
 
 .masked .hint,

@@ -2158,8 +2158,6 @@
       var redact = el("div", "redact");
       redact.setAttribute("aria-hidden", "true");
       redact.appendChild(el("span", "redactline"));
-      redact.appendChild(el("span", "redactline"));
-      redact.appendChild(el("span", "redactline"));
       box.appendChild(redact);
       box.appendChild(el("p", "hint", it.burn ? t("burnHint") : t("secretExpiresHint")));
       if (state.askCode[id])

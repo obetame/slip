@@ -1639,13 +1639,10 @@ export function start(page: Page, node: Node): void {
       return el("p", "hint secretgone", t("takenBody"));
     }
     const box = el("div", "masked");
-    // Three bars of struck-out text say "there is a body here, it is hidden"
-    // without the weight of six solid dots, which read as a password field
-    // rather than as a note with something blacked out.
+    // One short bar: a token is short, and a stack of bars reads as a
+    // loading skeleton rather than as something blacked out.
     const redact = el("div", "redact");
     redact.setAttribute("aria-hidden", "true");
-    redact.appendChild(el("span", "redactline"));
-    redact.appendChild(el("span", "redactline"));
     redact.appendChild(el("span", "redactline"));
     box.appendChild(redact);
     box.appendChild(el("p", "hint", it.burn ? t("burnHint") : t("secretExpiresHint")));
