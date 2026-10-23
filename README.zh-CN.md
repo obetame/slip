@@ -39,7 +39,7 @@ macOS 的包用 Developer ID 签名并经过 Apple 公证，打开时不会出�
 需要 Go 1.27 或更新版本：
 
 ```sh
-go install github.com/obetame/slip/cmd/slip@v0.1.0
+go install github.com/obetame/slip/cmd/slip@v0.4.0
 ```
 
 二进制会放在 `$(go env GOPATH)/bin`。这个目录要在 `PATH` 里。

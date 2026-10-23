@@ -39,7 +39,7 @@ On Windows, unzip `slip.exe` and run it from a command prompt. Windows may warn 
 Go 1.27 or newer:
 
 ```sh
-go install github.com/obetame/slip/cmd/slip@v0.1.0
+go install github.com/obetame/slip/cmd/slip@v0.4.0
 ```
 
 The binary is placed in `$(go env GOPATH)/bin`. That directory has to be on `PATH`.
