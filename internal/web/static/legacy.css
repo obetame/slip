@@ -120,6 +120,16 @@ textarea {
   line-height: 1.5;
 }
 
+/* A placeholder is a hint about the field, not a stand-in of the same size:
+   at 16px it was the largest thing in a block of 12px labels. The field keeps
+   16px so iOS does not zoom on focus; only the hint steps down. */
+input::placeholder,
+textarea::placeholder {
+  font-size: 14px;
+  color: var(--muted);
+  opacity: 1;
+}
+
 .field { margin-top: 14px; }
 .composer { position: relative; }
 .row { margin-top: 12px; }
@@ -679,6 +689,15 @@ textarea.editor-input:focus {
 }
 
 .masked { padding: 8px 0 2px; }
+
+.masked .hint,
+.secretbody .hint,
+.secretgone { font-size: 12px; }
+
+/* The dot row already carries the gap, so the caption sits right under it. */
+.masked .hint { margin: 0; }
+
+.codecard .hint { font-size: 12px; }
 
 .masked .dots {
   margin: 0 0 5px;
