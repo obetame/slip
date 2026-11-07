@@ -13,6 +13,7 @@ import { byteLength, dayKey, formatBytes, formatTime, kindLabel, safeID, storeGe
 import { allFiles, classifyPaste, previewable } from "./clip";
 import { copyText } from "./clipboard";
 import { render as renderMarkdown, isMarkdown } from "./markdown";
+import * as handoff from "./handoff";
 import type { Bootstrap, Item, ItemsBody, Page, RevealBody, UpdateBody, View } from "./types";
 
 export interface Node {
@@ -132,6 +133,20 @@ export function start(page: Page, node: Node): void {
     revealShow: {},
     secretTimer: 0
   };
+
+  // The handoff cards live in the composer's neighbourhood but keep
+  // their own state, because they move on a one second beat while a
+  // transfer is in flight and the board must not re-render that often.
+  handoff.host({
+    say: say,
+    showErr: showErr,
+    notice: showNotice,
+    reload: function () {
+      reloadItems().catch(function () {
+        // The board keeps what it has; the next poll catches up.
+      });
+    }
+  });
 
   // ---- chrome -------------------------------------------------------
 
@@ -650,6 +665,9 @@ export function start(page: Page, node: Node): void {
     node.main.appendChild(composer());
     const code = codeCard();
     if (code) node.main.appendChild(code);
+    // Cards for live handoffs sit under the composer too: they are about
+    // something happening now, not about the stack below them.
+    handoff.mount(node.main);
     // The search field is always present once there is something to find,
     // otherwise there is no way to start a search.
     if (state.items.length || state.query.trim()) node.main.appendChild(searchBar());
@@ -924,6 +942,7 @@ export function start(page: Page, node: Node): void {
       file.value = "";
     });
     row.appendChild(pick);
+    row.appendChild(handoff.pickButton(t("hoSend")));
     row.appendChild(go);
     form.appendChild(lab);
     form.appendChild(ta);
@@ -1276,12 +1295,13 @@ export function start(page: Page, node: Node): void {
 
   function loadFirst(): void {
     state.loading = true;
-    api<ItemsBody>("/api/items?limit=40")
+    api<ItemsBody>("/api/items?limit=40&live=1")
       .then(function (body) {
         state.loading = false;
         state.itemsLoaded = true;
         state.items = body.items || [];
         state.hasMore = !!body.hasMore;
+        handoff.live(body);
         noteNewest();
         startPolling();
         if (state.view === "board") renderBoard();
@@ -1296,10 +1316,11 @@ export function start(page: Page, node: Node): void {
   }
 
   function reloadItems(): Promise<void> {
-    return api<ItemsBody>("/api/items?limit=40").then(function (body) {
+    return api<ItemsBody>("/api/items?limit=40&live=1").then(function (body) {
       state.itemsLoaded = true;
       state.items = body.items || [];
       state.hasMore = !!body.hasMore;
+      handoff.live(body);
       noteNewest();
       if (state.view === "board") renderBoard();
     });
@@ -1320,8 +1341,9 @@ export function start(page: Page, node: Node): void {
     if (state.pollTimer) return;
     state.pollTimer = setInterval(function () {
       if (state.view !== "board" || document.hidden) return;
-      api<ItemsBody>("/api/items?limit=1")
+      api<ItemsBody>("/api/items?limit=1&live=1")
         .then(function (body) {
+          handoff.live(body);
           const top = body.items && body.items[0];
           if (!top || !state.newestId || top.id === state.newestId) return;
           if (document.getElementById("newbar")) return;
@@ -1476,7 +1498,47 @@ export function start(page: Page, node: Node): void {
   // confirmButton asks twice for anything hard to take back. The first
   // click arms the button, the second click acts. Arming is forgotten on
   // the next render, so nothing stays armed for long.
+  // recordNode draws the trace a handoff leaves behind. It is a slip
+  // with no body: there is nothing to view, nothing to download, and
+  // nothing counted against the space set aside on this Mac. Saying that
+  // out loud is the point, because a two gigabyte line that did not move
+  // the usage bar looks like a bug otherwise.
+  function recordNode(it: Item, newest: boolean): HTMLElement {
+    const card = el("article", newest ? "slip record is-new" : "slip record");
+    card.setAttribute("data-kind", "handoff");
+    const tr = it.transfer;
+    const out = !tr || !tr.fromId || tr.fromId === handoff.selfID();
+
+    const head = el("div", "sliphead");
+    head.appendChild(el("span", "kindtag", t("hoRecord")));
+    head.appendChild(el("span", "meta", formatTime(it.createdAt)));
+    if (safeID(it.id)) {
+      const del = confirmButton(t("remove"), t("confirmRemove"), function () {
+        removeItem(it.id);
+      }, "textbtn");
+      head.appendChild(actionRow([del], function (open) {
+        if (open) card.classList.add("is-menu");
+        else card.classList.remove("is-menu");
+      }, false));
+    }
+    card.appendChild(head);
+
+    card.appendChild(el("p", "fname", it.name || t("fileKind")));
+
+    const bits = [formatBytes(it.size || 0), out ? t("hoRecordOut") : t("hoRecordIn")];
+    const peer = out ? tr && tr.to : tr && tr.from;
+    if (peer) bits.push((out ? t("hoTo") : t("hoFrom")) + " " + peer);
+    card.appendChild(el("p", "meta", bits.filter(Boolean).join(" · ")));
+
+    card.appendChild(el("p", "hint", t("hoNoFile")));
+    if (tr && tr.sha256) {
+      card.appendChild(el("p", "hint", t("hoCheck") + " " + tr.sha256.slice(0, 12)));
+    }
+    return card;
+  }
+
   function slipNode(it: Item, newest: boolean, compact?: boolean): HTMLElement {
+    if (it.kind === "handoff") return recordNode(it, newest);
     const id = safeID(it.id);
     const secret = !!it.secret;
     const card = el("article", newest ? "slip is-new" : "slip");

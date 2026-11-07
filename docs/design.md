@@ -10,7 +10,7 @@ The screen name is 纸条. The command is `slip`. English UI calls it Slip.
 
 Tools that already exist solve a nearby problem and miss this one.
 
-- PairDrop and LocalSend move a file while both devices are awake and willing. Slip keeps the slip after the sender closes the laptop lid.
+- PairDrop and LocalSend move a file while both devices are awake and willing. Slip keeps the slip after the sender closes the laptop lid. Handoff borrows their model, but only for the case where both ends are present and the file is too large; the slip's default waiting behaviour is unchanged.
 - File browsers and upload pages are folders. Slip is a stack, newest on top, read by copying or downloading one card.
 - A cloud clipboard leaves the house. Slip stays on the LAN.
 
@@ -23,8 +23,23 @@ Tools that already exist solve a nearby problem and miss this one.
 - One file is at most 50 MB. One text slip is at most 200 KB of UTF-8. The data directory is at most 5 GB of file bytes.
 - Text is plain text. There is no Markdown rendering.
 - The interface is Chinese first, with an English toggle kept in `localStorage` under `slip.lang`. The theme is light unless the person chooses dark (`slip.theme`).
-- There is no WebSocket. Opening the page, or pressing refresh, loads the stack.
+- There is no WebSocket. Opening the page, or pressing refresh, loads the stack. A handoff in flight adds a one second poll, and drops it when the transfer ends.
 - The wire is HTTP. HTTPS certificates are a poor fit for iOS 12, which is a device this version still serves. The passphrase must not be reused from email or a bank.
+
+## Handoff
+
+Slip has two time scales. The default is put it down and walk away: the content waits on the board for whoever comes later. A handoff is the other one: one file goes from one device straight to another, and **the server only introduces the two ends**. It keeps no copy.
+
+- The sender says only "I want to hand over X, N bytes", and a card appears. No bytes move yet.
+- The receiver presses Take and gets a one-shot download ticket. The browser starts the download at the same moment the sender's page starts the upload. The bytes meet in a 512 KB pipe in memory and are never written to disk.
+- At the end the server hashes what actually went through and compares it with what the sender declared. Only a match writes a row on the board: name, size, both device names, checksum. The row has no file behind it, offers nothing to download, and counts against neither the per-file cap nor the 5 GB.
+- Close the sender's window and the handoff ends. That is the meaning of the mode, not a defect: something that is never stored cannot wait for you.
+- The stream is read once, in order, so the receiver has to use the browser's own downloader. A download manager that opens several connections has to be told to stand down; the reply carries `Accept-Ranges: none`, which the well-behaved ones read and honour by staying on one connection.
+- A download that dies partway, whether from a dropped link or a download manager taking over, does not end the handoff. The server swaps in a fresh pipe, the sender sends the file again from the start, and this can happen up to four times. The bytes start over; the card and the consent do not.
+
+Why not a direct browser-to-browser connection (WebRTC): the page is plain HTTP, which is not a secure context, so the browser offers no usable disk-writing API there and may not expose `RTCPeerConnection` at all. Handing the download to the browser's own download manager is the only way to write a 2 GB file to disk on iOS 12 with flat memory. True peer-to-peer needs HTTPS, which is a separate product decision.
+
+Device identity is not an account. Each browser gets a random `slip_device` cookie on first contact, and the server records "who has a page open" against it, forgetting a device after 45 seconds without a request. The passphrase is still the only lock.
 
 ## Two pages
 

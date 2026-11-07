@@ -93,7 +93,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go janitor(ctx, st)
+	go janitor(ctx, st, app)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -224,7 +224,7 @@ func die(err error) {
 	os.Exit(1)
 }
 
-func janitor(ctx context.Context, st *store.Store) {
+func janitor(ctx context.Context, st *store.Store, app *server.Server) {
 	tick := time.NewTicker(5 * time.Second)
 	defer tick.Stop()
 	for {
@@ -233,6 +233,7 @@ func janitor(ctx context.Context, st *store.Store) {
 			return
 		case <-tick.C:
 			st.Purge()
+			app.Sweep()
 		}
 	}
 }

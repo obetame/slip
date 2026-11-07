@@ -111,6 +111,10 @@ export function errText(err: ApiError | null | undefined): string {
     secret_locked: "secretLocked",
     gone: "errorGeneric",
     not_found: "errorGeneric",
+    already_taken: "hoTakenMsg",
+    busy: "hoBusyMsg",
+    not_stored: "hoNotStored",
+    one_shot: "hoOneShot",
     bad_request: "errorGeneric"
   };
   const key = err.code ? map[err.code] : "";

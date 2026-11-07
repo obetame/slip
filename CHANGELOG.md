@@ -3,6 +3,72 @@
 What changed in each release, newest first. The release page for a tag
 carries that version's section, so the notes and this file cannot drift.
 
+## 0.5.0 - 2026-11-07
+
+### Added
+
+- Handoff: hand a file straight to another device. The bytes never land on
+  this Mac and never count against the 5 GB data directory. The receiver
+  downloads through its own browser while the sender uploads from the page;
+  the two ends meet on a 512 KB pipe in memory and nothing is written to
+  disk. When it finishes the board keeps one row with the name, the size,
+  both device names, and a checksum. The row has no file behind it.
+- A checksum on every handoff record, so either end can verify what arrived.
+- An anonymous device identity per browser, so a card can say which device
+  offered a file and which one took it. It is not an account: the passphrase
+  is still the only lock.
+
+### Changed
+
+- The twenty second board poll now carries presence and live handoff cards,
+  so none of this cost a second request or a second connection. A handoff in
+  flight adds a one second poll and drops it when the transfer ends.
+- The button is called Send direct and sits next to Add file, with a tooltip
+  saying it does not use the board. The development name was unreadable to
+  anyone who had not been told what it meant, so it is gone.
+- The uploader fills a whole 256 KB chunk before handing it to the pipe. A
+  network read returns whatever the kernel happens to have, often a couple
+  of kilobytes, and the old loop pushed each of those through the pipe and
+  flushed the receiver per piece, which breaks throughput on a real link.
+- The server log prints the measured rate for each side
+  (`handoff push ... MB/s`, `handoff pull ... MB/s`), so a slow transfer says
+  which end is slow instead of leaving it to guesswork.
+
+### Fixed
+
+- Asking for the size with HEAD before downloading left the real download
+  empty. Browsers do this routinely; the probe now answers from the session
+  and leaves the stream alone.
+- Two downloads of the same handoff split the bytes between them, so both
+  stalled halfway and both failed. There is one reader per pipe now, and the
+  newest request takes it: a download manager that grabs the URL from the
+  browser asks while the browser's own request is still open, and refusing
+  it is what produced "this site will not serve the same file twice". A 400
+  ms grace keeps a browser from killing its own transfer, and a takeover
+  counts against the restart budget.
+- A download being taken over is no longer the end of the handoff. A dropped
+  or replaced reader makes the server swap in a fresh pipe and the sender
+  sends again from the start, up to four times. The card and the consent
+  survive. The bytes still start over: this is not a resume.
+- External download managers can fetch the file. They are separate
+  processes without the browser's cookie jar, and the download address used
+  to require a session, so every one of them got a 401. The ticket in the
+  URL is the credential now: 128 random bits, valid for ten minutes, revoked
+  when the handoff is cancelled. Whoever holds the link can download, which
+  is the trade for a home LAN behind a household passphrase.
+- Download replies carry `Accept-Ranges: none`, so a download manager that
+  reads it stays on one connection. The stream is one pass by nature: there
+  is one copy and it can be read once, in order.
+- A receiver could, in a rare ordering, call a finished transfer short.
+- The one second poll stopped while the sender's tab was hidden, so the
+  upload never learned that its file had been taken. It no longer stops.
+
+### Notes
+
+- A handoff needs both pages open. Closing the sender's page ends it, and no
+  record is written. That is the difference from a slip: a slip waits, a
+  handoff does not.
+
 ## 0.4.0 - 2026-10-23
 
 ### Added

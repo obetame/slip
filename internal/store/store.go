@@ -46,10 +46,23 @@ const (
 )
 
 const (
-	KindText  = "text"
-	KindImage = "image"
-	KindFile  = "file"
+	KindText    = "text"
+	KindImage   = "image"
+	KindFile    = "file"
+	KindHandoff = "handoff"
 )
+
+// Transfer is the only trace a handoff leaves on the board. There is no
+// blob behind it: the bytes went from one device to another and were
+// never kept here.
+type Transfer struct {
+	From       string `json:"from"`
+	FromID     string `json:"fromId,omitempty"`
+	To         string `json:"to,omitempty"`
+	ToID       string `json:"toId,omitempty"`
+	SHA256     string `json:"sha256"`
+	DurationMS int64  `json:"durationMs,omitempty"`
+}
 
 var (
 	ErrNotFound = errors.New("not_found")
@@ -61,7 +74,8 @@ var (
 	// ErrSecret refuses an edit. A secret slip is written once and read
 	// once; rewriting the body from a browser would let a slip that was
 	// about to expire come back to life.
-	ErrSecret = errors.New("secret_locked")
+	ErrSecret   = errors.New("secret_locked")
+	ErrNotStore = errors.New("not_stored")
 )
 
 // Item is one slip. Blob is the sha256 of a file body and is not sent
@@ -89,6 +103,9 @@ type Item struct {
 	Wrapped   *seal.Wrapped `json:"wrapped,omitempty"`
 	Wrong     int           `json:"wrong,omitempty"`
 	Tag       string        `json:"tag,omitempty"`
+
+	// Transfer is the trace a handoff leaves. There is no blob behind it.
+	Transfer *Transfer `json:"transfer,omitempty"`
 }
 
 // Public is the browser view of an item.
@@ -110,6 +127,8 @@ type Public struct {
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 	Burn      bool       `json:"burn,omitempty"`
 	TakenAt   *time.Time `json:"takenAt,omitempty"`
+
+	Transfer *Transfer `json:"transfer,omitempty"`
 }
 
 func (it Item) Public() Public {
@@ -118,6 +137,7 @@ func (it Item) Public() Public {
 		Name: it.Name, Size: it.Size, Mime: it.Mime, HasThumb: it.HasThumb,
 		Secret: it.Secret, Sealed: it.Wrapped != nil,
 		ExpiresAt: it.ExpiresAt, Burn: it.Burn, TakenAt: it.TakenAt,
+		Transfer: it.Transfer,
 	}
 	// The body of a secret slip never appears in the list. The only way to
 	// read one is reveal, which is where the read is counted.
@@ -423,6 +443,32 @@ func (s *Store) AddFile(tmpPath, name, mime string, size int64) (Item, error) {
 		if !existed {
 			_ = os.Remove(dest)
 		}
+		return Item{}, err
+	}
+	return it, nil
+}
+
+// AddHandoff leaves a record of a transfer that never touched this
+// disk. No blob is written and no quota is spent; the row exists so the
+// board can say "this went from here to there" after the fact.
+func (s *Store) AddHandoff(name, mime string, size int64, t Transfer) (Item, error) {
+	if size <= 0 {
+		return Item{}, ErrEmpty
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	it := Item{
+		ID:        newID(),
+		Kind:      KindHandoff,
+		CreatedAt: s.now().UTC(),
+		Name:      cleanName(name),
+		Size:      size,
+		Mime:      mime,
+		Transfer:  &t,
+	}
+	s.items = append(s.items, it)
+	if err := s.saveLocked(); err != nil {
+		s.items = s.items[:len(s.items)-1]
 		return Item{}, err
 	}
 	return it, nil
@@ -753,6 +799,11 @@ func kindFor(mime, name string) string {
 	}
 	return KindFile
 }
+
+// CleanName is what a browser may be shown for a file it sent. It is the
+// same trim the upload path uses, exported so a handoff card carries the
+// name that will end up on the record.
+func CleanName(name string) string { return cleanName(name) }
 
 func cleanName(name string) string {
 	name = filepath.Base(strings.ReplaceAll(name, "\x00", ""))

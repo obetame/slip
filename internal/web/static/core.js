@@ -133,7 +133,38 @@
       leftHour: "还剩 {n} 小时",
       leftDay: "还剩 {n} 天",
       expired: "已过期",
-      settingsSecret: "密条设了取件码时，内容以密文写在磁盘上，口令不保存。局域网仍是 HTTP，同网段抓包能看到明文。"
+      settingsSecret: "密条设了取件码时，内容以密文写在磁盘上，口令不保存。局域网仍是 HTTP，同网段抓包能看到明文。",
+      hoSend: "直接传",
+      hoSendHint: "直接传到对方设备，不占用板子的空间",
+      hoFrom: "来自",
+      hoTo: "递给",
+      hoWaiting: "等待接收…",
+      hoNobody: "现在没有别的设备在线。对方打开这个页面后才能接。",
+      hoTake: "接收",
+      hoWaitingYou: "等你接收",
+      hoDecline: "拒绝",
+      hoCancel: "取消",
+      hoAccepted: "对方已接，正在接通…",
+      hoRestarting: "连接断了，正在重来…",
+      hoAgain: "连接中断，正在重新传一遍。",
+      hoTakeAgain: "重新接收",
+      hoSending: "正在传",
+      hoReceiving: "正在收",
+      hoDone: "已送到，不占空间",
+      hoGot: "已收到，不占空间",
+      hoTaken: "已经被别人接走了。",
+      hoExpired: "没有人接，已经收回。",
+      hoFailed: "没有递成功。",
+      hoKeep: "这个页面要保持打开，直到传完。",
+      hoRecord: "直传",
+      hoRecordOut: "已传出",
+      hoRecordIn: "已收到",
+      hoNoFile: "文件没有存在这台 Mac 上",
+      hoCheck: "校验码",
+      hoTakenMsg: "已经被别的设备接走了。",
+      hoBusyMsg: "现在还有一次传送在进行，等一下再试。",
+      hoNotStored: "这条记录不含文件，字节没有存在这台 Mac 上。",
+      hoOneShot: "这个地址只能下一次。装了多线程下载工具的话，请让它只用一个连接。"
     },
     en: {
       mark: "Slip",
@@ -267,7 +298,38 @@
       leftHour: "{n} h left",
       leftDay: "{n} d left",
       expired: "Expired",
-      settingsSecret: "With a code, a secret is written to disk as ciphertext and the code is not stored. The LAN is still HTTP, so a sniffer on the same network sees the body in the clear."
+      settingsSecret: "With a code, a secret is written to disk as ciphertext and the code is not stored. The LAN is still HTTP, so a sniffer on the same network sees the body in the clear.",
+      hoSend: "Send direct",
+      hoSendHint: "Straight to the other device, using none of the board",
+      hoFrom: "From",
+      hoTo: "To",
+      hoWaiting: "Waiting for someone to take it…",
+      hoNobody: "No other device is here. They need this page open to take it.",
+      hoTake: "Take",
+      hoWaitingYou: "Yours to take",
+      hoDecline: "Decline",
+      hoCancel: "Cancel",
+      hoAccepted: "Taken. Connecting the two ends…",
+      hoRestarting: "The connection dropped, starting over…",
+      hoAgain: "The link dropped, so it is going again from the start.",
+      hoTakeAgain: "Take again",
+      hoSending: "Sending",
+      hoReceiving: "Receiving",
+      hoDone: "Delivered, uses no space",
+      hoGot: "Received, uses no space",
+      hoTaken: "Someone else took it.",
+      hoExpired: "Nobody took it, so it was withdrawn.",
+      hoFailed: "The transfer did not finish.",
+      hoKeep: "Keep this page open until it finishes.",
+      hoRecord: "Handoff",
+      hoRecordOut: "Sent",
+      hoRecordIn: "Received",
+      hoNoFile: "The file was never kept on this Mac",
+      hoCheck: "Checksum",
+      hoTakenMsg: "Another device took it first.",
+      hoBusyMsg: "One transfer is already running. Try again in a moment.",
+      hoNotStored: "This row has no file. The bytes were never kept on this Mac.",
+      hoOneShot: "This address downloads once. If a download manager is running, set it to a single connection."
     }
   };
   function lang() {
@@ -454,6 +516,10 @@
       secret_locked: "secretLocked",
       gone: "errorGeneric",
       not_found: "errorGeneric",
+      already_taken: "hoTakenMsg",
+      busy: "hoBusyMsg",
+      not_stored: "hoNotStored",
+      one_shot: "hoOneShot",
       bad_request: "errorGeneric"
     };
     var key = err.code ? map[err.code] : "";
@@ -818,6 +884,341 @@
     return n.slice(-3) === ".md" || n.slice(-9) === ".markdown" || m === "text/markdown";
   }
 
+  // ../.webuild/handoff.js
+  var hostRef = null;
+  var zone = null;
+  var picker = null;
+  var cards = [];
+  var peers = [];
+  var self = "";
+  var myOffer = "";
+  var pending = null;
+  var pushing = {};
+  var accepting = {};
+  var sent = {};
+  var gen = {};
+  var fast = 0;
+  var lastPaint = 0;
+  var throttle = 200;
+  function host(h) {
+    hostRef = h;
+  }
+  function selfID() {
+    return self;
+  }
+  function pickButton(label) {
+    var b = btn(label, openPicker, "textbtn");
+    b.title = t("hoSendHint");
+    return b;
+  }
+  function openPicker() {
+    if (!picker) {
+      var input_1 = el("input");
+      input_1.type = "file";
+      input_1.className = "clip";
+      input_1.tabIndex = -1;
+      input_1.setAttribute("aria-hidden", "true");
+      input_1.addEventListener("change", function() {
+        var f = input_1.files && input_1.files[0];
+        input_1.value = "";
+        if (f)
+          offer(f);
+      });
+      document.body.appendChild(input_1);
+      picker = input_1;
+    }
+    picker.click();
+  }
+  function mount(parent) {
+    if (!zone)
+      zone = el("section", "handoff");
+    parent.appendChild(zone);
+    paint();
+  }
+  function live(body) {
+    if (body.device)
+      self = body.device.id;
+    peers = body.devices || [];
+    cards = body.handoffs || [];
+    var i;
+    for (i = 0; i < cards.length; i++) {
+      var h = cards[i];
+      if (h.id !== myOffer || !pending || pushing[h.id])
+        continue;
+      if (h.state !== "accepted")
+        continue;
+      if (gen[h.id] === (h.gen || 0))
+        continue;
+      if (gen[h.id] !== void 0 && hostRef)
+        hostRef.notice(t("hoAgain"));
+      startPush(h.id, pending, h.gen || 0);
+    }
+    paint();
+    if (busy())
+      startFast();
+    else
+      stopFast();
+  }
+  function offer(f) {
+    if (!hostRef)
+      return;
+    if (f.size <= 0) {
+      hostRef.notice(t("hoFailed"));
+      return;
+    }
+    pending = f;
+    postJSON("/api/handoff", {
+      name: f.name,
+      size: f.size,
+      mime: f.type || "application/octet-stream",
+      to: ""
+    }).then(function(r) {
+      myOffer = r.handoff.id;
+      cards = [r.handoff].concat(cards);
+      paint();
+      startFast();
+      if (hostRef) {
+        hostRef.say(t("hoKeep"));
+        if (!peers.length)
+          hostRef.notice(t("hoNobody"));
+      }
+    }, function(err) {
+      pending = null;
+      if (hostRef)
+        hostRef.showErr(err);
+    });
+  }
+  function startPush(id, f, attempt) {
+    pushing[id] = true;
+    sent[id] = 0;
+    gen[id] = attempt;
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/handoff/" + id + "/push");
+    xhr.setRequestHeader("X-Slip", "1");
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.upload.onprogress = function(e) {
+      if (!e.lengthComputable)
+        return;
+      sent[id] = e.loaded;
+      paintSoon();
+    };
+    xhr.onload = function() {
+      delete pushing[id];
+      if (xhr.status >= 200 && xhr.status < 300) {
+        myOffer = "";
+        pending = null;
+        if (hostRef) {
+          hostRef.notice(t("hoDone"));
+          hostRef.reload();
+        }
+      } else if (isRestart(xhr)) {
+      } else if (hostRef) {
+        hostRef.notice(t("hoFailed"));
+      }
+      paint();
+    };
+    xhr.onerror = function() {
+      delete pushing[id];
+      if (hostRef)
+        hostRef.notice(t("errorNet"));
+      paint();
+    };
+    xhr.onabort = function() {
+      delete pushing[id];
+      paint();
+    };
+    xhr.send(f);
+    paint();
+  }
+  function isRestart(xhr) {
+    if (xhr.status !== 409)
+      return false;
+    try {
+      var body = JSON.parse(xhr.responseText);
+      return !!body && body.error === "restart";
+    } catch (e) {
+      return false;
+    }
+  }
+  function take(h) {
+    if (accepting[h.id])
+      return;
+    accepting[h.id] = true;
+    paint();
+    postJSON("/api/handoff/" + h.id + "/accept", {}).then(function(r) {
+      delete accepting[h.id];
+      startPull(r.pullUrl);
+      startFast();
+      if (hostRef)
+        hostRef.reload();
+    }, function(err) {
+      delete accepting[h.id];
+      if (hostRef) {
+        hostRef.showErr(err);
+        hostRef.reload();
+      }
+    });
+  }
+  function withdraw(id, action) {
+    postJSON("/api/handoff/" + id + "/" + action, {}).then(function() {
+      if (id === myOffer) {
+        myOffer = "";
+        pending = null;
+      }
+      if (hostRef)
+        hostRef.reload();
+    }, function(err) {
+      if (hostRef)
+        hostRef.showErr(err);
+    });
+  }
+  function startPull(url) {
+    var a = document.createElement("a");
+    if ("download" in a) {
+      a.href = url;
+      a.setAttribute("download", "");
+      a.rel = "noopener";
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    }
+    window.location.href = url;
+  }
+  function startFast() {
+    if (fast)
+      return;
+    fast = window.setInterval(tick, 1e3);
+  }
+  function stopFast() {
+    if (!fast)
+      return;
+    window.clearInterval(fast);
+    fast = 0;
+  }
+  function tick() {
+    api("/api/items?limit=1&live=1").then(function(body) {
+      live(body);
+    }, function() {
+    });
+  }
+  function busy() {
+    var i;
+    for (i = 0; i < cards.length; i++) {
+      var h = cards[i];
+      if (!h.mine)
+        continue;
+      if (h.state === "offered" || h.state === "accepted" || h.state === "sending")
+        return true;
+    }
+    return false;
+  }
+  function paint() {
+    if (!zone)
+      return;
+    lastPaint = Date.now();
+    clear(zone);
+    if (!cards.length) {
+      zone.hidden = true;
+      return;
+    }
+    zone.hidden = false;
+    var i;
+    for (i = 0; i < cards.length; i++)
+      zone.appendChild(card(cards[i]));
+  }
+  function paintSoon() {
+    var now = Date.now();
+    if (now - lastPaint < throttle)
+      return;
+    paint();
+  }
+  function card(h) {
+    var box = el("div", "ho");
+    box.setAttribute("data-state", h.state);
+    box.setAttribute("data-mine", h.fromId === self ? "out" : "in");
+    var head = el("div", "ho-head");
+    head.appendChild(el("span", "ho-name", h.name || t("fileKind")));
+    box.appendChild(head);
+    var other = h.fromId === self ? h.to : h.from;
+    var parts = [formatBytes(h.size), stateText(h)];
+    if (other)
+      parts.push((h.fromId === self ? t("hoTo") : t("hoFrom")) + " " + other);
+    box.appendChild(el("p", "ho-meta", joinDots(parts)));
+    if (h.state === "sending" && h.fromId === self) {
+      var bar = el("div", "ho-bar");
+      var fill = el("i", "ho-fill");
+      var done = sent[h.id] || h.sent || 0;
+      var ratio = h.size > 0 ? Math.min(1, done / h.size) : 0;
+      fill.style.width = Math.round(ratio * 100) + "%";
+      bar.appendChild(fill);
+      box.appendChild(bar);
+      box.appendChild(el("p", "ho-hint", t("hoKeep")));
+    }
+    if (h.state === "offered" && h.fromId === self && !peers.length) {
+      box.appendChild(el("p", "ho-hint", t("hoNobody")));
+    }
+    var acts = el("div", "ho-acts");
+    if (h.state === "offered" && h.fromId !== self) {
+      var takeBtn = btn(t("hoTake"), function() {
+        take(h);
+      }, "textbtn ho-take");
+      takeBtn.disabled = !!accepting[h.id];
+      acts.appendChild(takeBtn);
+      acts.appendChild(btn(t("hoDecline"), function() {
+        withdraw(h.id, "decline");
+      }, "textbtn"));
+    } else if (h.state === "accepted" && h.toId === self) {
+      if ((h.gen || 0) > 0) {
+        var again = btn(t("hoTakeAgain"), function() {
+          take(h);
+        }, "textbtn ho-take");
+        again.disabled = !!accepting[h.id];
+        acts.appendChild(again);
+      }
+      acts.appendChild(btn(t("hoCancel"), function() {
+        withdraw(h.id, "cancel");
+      }, "textbtn"));
+    } else if (h.state === "accepted" || h.state === "sending") {
+      acts.appendChild(btn(t("hoCancel"), function() {
+        withdraw(h.id, "cancel");
+      }, "textbtn"));
+    }
+    if (acts.firstChild)
+      box.appendChild(acts);
+    return box;
+  }
+  function stateText(h) {
+    var out = h.fromId === self;
+    if (h.state === "offered")
+      return out ? t("hoWaiting") : t("hoWaitingYou");
+    if (h.state === "accepted")
+      return (h.gen || 0) > 0 ? t("hoRestarting") : t("hoAccepted");
+    if (h.state === "sending")
+      return out ? t("hoSending") : t("hoReceiving");
+    if (h.state === "done")
+      return out ? t("hoDone") : t("hoGot");
+    if (h.state === "declined")
+      return t("hoTaken");
+    if (h.state === "expired")
+      return t("hoExpired");
+    if (h.state === "failed")
+      return t("hoFailed");
+    return t("hoWaiting");
+  }
+  function joinDots(parts) {
+    var out = "";
+    var i;
+    for (i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      if (!p)
+        continue;
+      out = out ? out + " · " + p : p;
+    }
+    return out;
+  }
+
   // ../.webuild/board.js
   var fileCap = 50 * 1024 * 1024;
   var textCap = 200 * 1024;
@@ -865,6 +1266,15 @@
       revealShow: {},
       secretTimer: 0
     };
+    host({
+      say: say,
+      showErr: showErr,
+      notice: showNotice,
+      reload: function() {
+        reloadItems().catch(function() {
+        });
+      }
+    });
     var formEl = null;
     var writeEl = null;
     var dropBtn = null;
@@ -1317,6 +1727,7 @@
       var code = codeCard();
       if (code)
         node.main.appendChild(code);
+      mount(node.main);
       if (state.items.length || state.query.trim())
         node.main.appendChild(searchBar());
       if (!state.itemsLoaded) {
@@ -1548,6 +1959,7 @@
         file.value = "";
       });
       row.appendChild(pick);
+      row.appendChild(pickButton(t("hoSend")));
       row.appendChild(go);
       form.appendChild(lab);
       form.appendChild(ta);
@@ -1612,12 +2024,12 @@
       var i;
       for (i = 0; i < choices.length; i++) {
         var on = choices[i].v === state.secretTTL;
-        var seg = btn(choices[i].label, picker(i), on ? "segbtn is-on" : "segbtn");
+        var seg = btn(choices[i].label, picker2(i), on ? "segbtn is-on" : "segbtn");
         seg.setAttribute("aria-pressed", on ? "true" : "false");
         segBtns.push(seg);
         segs.appendChild(seg);
       }
-      function picker(index) {
+      function picker2(index) {
         return function() {
           state.secretTTL = choices[index].v;
           var j;
@@ -1656,7 +2068,7 @@
         see.textContent = state.secretShow ? t("hide") : t("show");
       }, "gbtn");
       see.setAttribute("aria-pressed", state.secretShow ? "true" : "false");
-      var gen = btn(t("codeGen"), function() {
+      var gen2 = btn(t("codeGen"), function() {
         state.secretCode = newCode();
         state.secretShow = true;
         if (state.view === "board")
@@ -1664,7 +2076,7 @@
       }, "gbtn");
       group.appendChild(code);
       group.appendChild(see);
-      group.appendChild(gen);
+      group.appendChild(gen2);
       field.appendChild(group);
       field.appendChild(el("p", "fieldnote", t("codeNote")));
       body.appendChild(field);
@@ -1854,11 +2266,12 @@
     }
     function loadFirst() {
       state.loading = true;
-      api("/api/items?limit=40").then(function(body) {
+      api("/api/items?limit=40&live=1").then(function(body) {
         state.loading = false;
         state.itemsLoaded = true;
         state.items = body.items || [];
         state.hasMore = !!body.hasMore;
+        live(body);
         noteNewest();
         startPolling();
         if (state.view === "board")
@@ -1874,10 +2287,11 @@
       });
     }
     function reloadItems() {
-      return api("/api/items?limit=40").then(function(body) {
+      return api("/api/items?limit=40&live=1").then(function(body) {
         state.itemsLoaded = true;
         state.items = body.items || [];
         state.hasMore = !!body.hasMore;
+        live(body);
         noteNewest();
         if (state.view === "board")
           renderBoard();
@@ -1892,7 +2306,8 @@
       state.pollTimer = setInterval(function() {
         if (state.view !== "board" || document.hidden)
           return;
-        api("/api/items?limit=1").then(function(body) {
+        api("/api/items?limit=1&live=1").then(function(body) {
+          live(body);
           var top = body.items && body.items[0];
           if (!top || !state.newestId || top.id === state.newestId)
             return;
@@ -2027,13 +2442,47 @@
       row.appendChild(more);
       return row;
     }
+    function recordNode(it, newest) {
+      var card2 = el("article", newest ? "slip record is-new" : "slip record");
+      card2.setAttribute("data-kind", "handoff");
+      var tr = it.transfer;
+      var out = !tr || !tr.fromId || tr.fromId === selfID();
+      var head = el("div", "sliphead");
+      head.appendChild(el("span", "kindtag", t("hoRecord")));
+      head.appendChild(el("span", "meta", formatTime(it.createdAt)));
+      if (safeID(it.id)) {
+        var del = confirmButton(t("remove"), t("confirmRemove"), function() {
+          removeItem(it.id);
+        }, "textbtn");
+        head.appendChild(actionRow([del], function(open) {
+          if (open)
+            card2.classList.add("is-menu");
+          else
+            card2.classList.remove("is-menu");
+        }, false));
+      }
+      card2.appendChild(head);
+      card2.appendChild(el("p", "fname", it.name || t("fileKind")));
+      var bits = [formatBytes(it.size || 0), out ? t("hoRecordOut") : t("hoRecordIn")];
+      var peer = out ? tr && tr.to : tr && tr.from;
+      if (peer)
+        bits.push((out ? t("hoTo") : t("hoFrom")) + " " + peer);
+      card2.appendChild(el("p", "meta", bits.filter(Boolean).join(" · ")));
+      card2.appendChild(el("p", "hint", t("hoNoFile")));
+      if (tr && tr.sha256) {
+        card2.appendChild(el("p", "hint", t("hoCheck") + " " + tr.sha256.slice(0, 12)));
+      }
+      return card2;
+    }
     function slipNode(it, newest, compact) {
+      if (it.kind === "handoff")
+        return recordNode(it, newest);
       var id = safeID(it.id);
       var secret = !!it.secret;
-      var card = el("article", newest ? "slip is-new" : "slip");
-      card.setAttribute("data-kind", secret ? "secret" : it.kind);
+      var card2 = el("article", newest ? "slip is-new" : "slip");
+      card2.setAttribute("data-kind", secret ? "secret" : it.kind);
       if (id)
-        card.setAttribute("data-id", id);
+        card2.setAttribute("data-id", id);
       var head = el("div", "sliphead");
       var tagLabel = secret ? t("secretKind") : kindLabel(it.kind);
       var tagGlyph = secret ? "● " : kindGlyph(it.kind);
@@ -2112,18 +2561,18 @@
       }
       head.appendChild(actionRow(actions, function(open) {
         if (open) {
-          card.classList.add("is-menu");
+          card2.classList.add("is-menu");
         } else {
-          card.classList.remove("is-menu");
+          card2.classList.remove("is-menu");
         }
       }, compact));
-      card.appendChild(head);
+      card2.appendChild(head);
       if (secret) {
-        card.appendChild(secretBody(it, id));
+        card2.appendChild(secretBody(it, id));
       } else if (it.kind === "text" && state.editing === id) {
-        card.appendChild(textEditor(it, id));
+        card2.appendChild(textEditor(it, id));
       } else if (it.kind === "text") {
-        card.appendChild(textBody(it, id));
+        card2.appendChild(textBody(it, id));
       } else if (it.kind === "image" && it.hasThumb && id) {
         var img = el("img", "shot");
         img.alt = it.name || t("imageKind");
@@ -2131,17 +2580,17 @@
         img.addEventListener("click", function() {
           openViewer(it, id);
         });
-        card.appendChild(img);
+        card2.appendChild(img);
       } else {
         var nameRow = el("p", "fname", it.name || t("fileKind"));
-        card.appendChild(nameRow);
+        card2.appendChild(nameRow);
         if (id && previewable(it)) {
           var pv = previewBody(it, id);
           if (pv)
-            card.appendChild(pv);
+            card2.appendChild(pv);
         }
       }
-      return card;
+      return card2;
     }
     function secretBody(it, id) {
       var shown = state.revealed[id];

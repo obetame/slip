@@ -139,7 +139,10 @@ textarea::placeholder {
 .composer textarea:focus { outline: none; }
 .composer:focus-within { border-color: var(--seal); }
 .composer.is-over { border-color: var(--seal); }
-.composer .row { justify-content: space-between; }
+.composer .row { justify-content: flex-start; }
+/* The seal sits at the far right; the two quiet buttons stay together
+   on the left instead of being spread across the row. */
+.composer .row .seal { margin-left: auto; }
 
 .fields { display: flex; flex-direction: column; gap: 14px; }
 .row {
@@ -1126,3 +1129,73 @@ textarea.editor-input:focus { outline: none; }
 }
 
 :root[data-theme="dark"] .slip[data-kind="secret"] .kindtag { color: var(--ink); }
+
+/* Handoff cards. A handoff is a file moving right now, not a slip that
+   was left behind, so it sits above the stack and vanishes when nothing
+   is in flight. The zone is a child of main, rebuilt on every board
+   render, and hidden rather than removed when empty. */
+
+.handoff {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.handoff[hidden] { display: none; }
+
+.ho {
+  border: 1px solid var(--line);
+  background: var(--sheet);
+  border-radius: 3px;
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+}
+.ho[data-state="done"] { opacity: 0.65; }
+
+.ho-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ho-name {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ho-meta { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.ho-hint { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+
+.ho-bar {
+  height: 4px;
+  margin-top: 10px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.ho-fill { display: block; height: 100%; width: 0; background: var(--seal); }
+
+.ho-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ho-take { color: var(--seal); font-weight: 600; }
+
+/* The record a finished handoff leaves. No body, so the card is quiet:
+   the name is muted and the tag does the explaining. */
+
+.slip.record .fname { color: var(--muted); }
+
+.slip[data-kind="handoff"] .kindtag {
+  background: #55606b;
+  color: #eef1f4;
+}
+
+:root[data-theme="dark"] .slip[data-kind="handoff"] .kindtag {
+  background: #7b8794;
+  color: #10151a;
+}

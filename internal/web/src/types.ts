@@ -8,6 +8,17 @@ export type Theme = "light" | "dark";
 
 export type View = "loading" | "setup" | "waiting" | "login" | "board" | "settings";
 
+// Transfer is the trace a handoff leaves on the board. There is no file
+// behind it: the bytes went from one device to the other.
+export interface Transfer {
+  from: string;
+  fromId?: string;
+  to?: string;
+  toId?: string;
+  sha256: string;
+  durationMs?: number;
+}
+
 // Item is one slip as the browser sees it. Optional fields are absent
 // when the server leaves them empty.
 export interface Item {
@@ -28,12 +39,44 @@ export interface Item {
   expiresAt?: string;
   burn?: boolean;
   takenAt?: string;
+
+  // transfer is the trace a handoff leaves. There is no file behind it.
+  transfer?: Transfer;
 }
 
 // RevealBody is what POST /api/items/{id}/reveal answers with.
 export interface RevealBody {
   text: string;
   burned: boolean;
+}
+
+// Device is one browser that has talked to slip recently. There are no
+// accounts, so this is only "something is open right now".
+export interface Device {
+  id: string;
+  name: string;
+}
+
+// HandoffView is one live card: an offer nobody has taken, or a
+// transfer in flight. It never carries bytes.
+export interface HandoffView {
+  id: string;
+  name: string;
+  size: number;
+  mime?: string;
+  state: string;
+  from: string;
+  fromId: string;
+  to?: string;
+  toId?: string;
+  mine?: boolean;
+  sent: number;
+  sha256?: string;
+  durationMs?: number;
+  expiresAt: string;
+  // gen is the attempt number. A change means the pipe was replaced and
+  // the upload has to start over.
+  gen?: number;
 }
 
 export interface Bootstrap {
@@ -45,11 +88,15 @@ export interface Bootstrap {
   urls?: string[];
   used?: number;
   limit?: number;
+  device?: Device;
 }
 
 export interface ItemsBody {
   items: Item[];
   hasMore: boolean;
+  device?: Device;
+  devices?: Device[];
+  handoffs?: HandoffView[];
 }
 
 // UpdateBody answers the check in Settings. Error is set instead of the

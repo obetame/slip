@@ -15,6 +15,7 @@ import (
 
 	"github.com/obetame/slip/internal/auth"
 	"github.com/obetame/slip/internal/config"
+	"github.com/obetame/slip/internal/handoff"
 	"github.com/obetame/slip/internal/lan"
 	"github.com/obetame/slip/internal/qrcode"
 	"github.com/obetame/slip/internal/seal"
@@ -34,6 +35,7 @@ type Server struct {
 	store    *store.Store
 	cfg      *config.Config
 	sessions *session.Book
+	hub      *handoff.Hub
 	argon    auth.Params
 	version  string
 	now      func() time.Time
@@ -58,6 +60,7 @@ func New(st *store.Store, cfg *config.Config, book *session.Book, argon auth.Par
 		store:    st,
 		cfg:      cfg,
 		sessions: book,
+		hub:      handoff.New(nil),
 		argon:    argon,
 		version:  ver,
 		now:      time.Now,
@@ -65,6 +68,22 @@ func New(st *store.Store, cfg *config.Config, book *session.Book, argon auth.Par
 		icon:     faviconPNG(),
 		sealCost: seal.DefaultCost(),
 	}
+	// A finished handoff leaves one row on the board and nothing else.
+	// The record is written here, once, by whichever end closed the
+	// transfer last.
+	s.hub.OnDone(func(info handoff.Info) {
+		_, err := st.AddHandoff(info.Name, info.Mime, info.Size, store.Transfer{
+			From:       info.From,
+			FromID:     info.FromID,
+			To:         info.To,
+			ToID:       info.ToID,
+			SHA256:     info.SHA256,
+			DurationMS: info.DurationMS,
+		})
+		if err != nil {
+			log.Printf("handoff record skipped: %v", err)
+		}
+	})
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.home)
 	mux.HandleFunc("GET /tokens.css", s.asset("tokens.css", "text/css; charset=utf-8"))
@@ -94,9 +113,20 @@ func New(st *store.Store, cfg *config.Config, book *session.Book, argon auth.Par
 	mux.HandleFunc("DELETE /api/items/{id}", s.deleteItem)
 	mux.HandleFunc("POST /api/restore", s.restore)
 	mux.HandleFunc("POST /api/clear", s.clear)
+	mux.HandleFunc("POST /api/handoff", s.createHandoff)
+	mux.HandleFunc("GET /api/handoff/{id}", s.getHandoff)
+	mux.HandleFunc("POST /api/handoff/{id}/accept", s.acceptHandoff)
+	mux.HandleFunc("POST /api/handoff/{id}/decline", s.declineHandoff)
+	mux.HandleFunc("POST /api/handoff/{id}/cancel", s.declineHandoff)
+	mux.HandleFunc("POST /api/handoff/{id}/push", s.pushHandoff)
+	mux.HandleFunc("GET /api/handoff/{id}/pull", s.pullHandoff)
 	s.mux = mux
 	return s
 }
+
+// Sweep expires timed out handoffs. The janitor calls it on the same
+// ticker that purges deleted slips.
+func (s *Server) Sweep() { s.hub.Sweep() }
 
 func (s *Server) SetPort(port int) {
 	s.mu.Lock()
@@ -143,12 +173,14 @@ func (s *Server) listenPort() int {
 func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 	loop := s.loopback(r)
 	authed := s.authed(r)
+	dev := s.device(w, r)
 	body := map[string]any{
 		"ready":    s.cfg.HasPassphrase(),
 		"authed":   authed,
 		"loopback": loop,
 		"version":  s.version,
 		"port":     s.listenPort(),
+		"device":   dev,
 	}
 	if loop || authed {
 		body["urls"] = lan.ShareURLs(s.listenPort())
@@ -492,6 +524,12 @@ type statusWriter struct {
 	status int
 	wrote  bool
 }
+
+// Unwrap lets http.ResponseController reach the real connection. Without
+// it the deadline and flush calls a handoff makes are silently dropped,
+// which is how a five minute server timeout comes back to bite a large
+// transfer.
+func (s *statusWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
 func (s *statusWriter) WriteHeader(code int) {
 	if s.wrote {

@@ -753,3 +753,34 @@ textarea.editor-input:focus {
 }
 
 :root[data-theme="dark"] .slip[data-kind="secret"] .kindtag { color: var(--ink); }
+
+/* Handoff cards. This sheet targets iOS 12, so there is no flex gap and
+   every tap target stays at least 44px. */
+
+.handoff { margin-top: 14px; }
+
+.ho {
+  border: 1px solid var(--line);
+  background: var(--sheet);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+
+.ho-head { display: block; }
+.ho-name { display: block; font-weight: 500; }
+.ho-meta { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+.ho-hint { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+
+.ho-bar { height: 4px; margin-top: 10px; background: var(--line); }
+.ho-fill { display: block; height: 4px; width: 0; background: var(--seal); }
+
+.ho-acts { text-align: right; margin-top: 10px; }
+.ho-acts button { margin-left: 10px; min-height: 44px; }
+.ho-take { color: var(--seal); font-weight: 600; }
+
+.slip.record .fname { color: var(--muted); }
+
+.slip[data-kind="handoff"] .kindtag {
+  background: #55606b;
+  color: #eef1f4;
+}

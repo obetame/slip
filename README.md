@@ -93,6 +93,12 @@ A code protects a stolen data directory, not the network. The page is HTTP, so
 anyone who can see the traffic sees the body when it is put down and again when
 it is read. Do not keep anything here that must not survive on disk.
 
+## Handoff
+
+Anything past 50 MB goes by **handoff**: you hand a file to someone and the bytes travel from their browser to yours without landing on this Mac, so they do not count against the 5 GB above. When it finishes, the board keeps one row with the name, the size, and a checksum. The file itself is not there.
+
+Both pages have to stay open until it finishes. Close one and that handoff is over. This is the one place where the board does not wait for you.
+
 ## Older iPads
 
 iPad mini 2, and other devices on iOS 12, get a simpler page with the same actions. Open `/?ui=legacy` to force it, or `/?ui=modern` to leave it. The choice is remembered on that browser.

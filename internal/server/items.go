@@ -35,7 +35,17 @@ func (s *Server) listItems(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []store.Public{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items, "hasMore": more})
+	body := map[string]any{"items": items, "hasMore": more}
+	// The poll that already runs every twenty seconds asks for live=1, so
+	// presence and open handoff cards ride along instead of costing a
+	// second request and a second timer.
+	if r.URL.Query().Get("live") == "1" {
+		dev := s.device(w, r)
+		for k, v := range s.liveHandoff(dev) {
+			body[k] = v
+		}
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) createText(w http.ResponseWriter, r *http.Request) {
@@ -292,6 +302,11 @@ func (s *Server) raw(w http.ResponseWriter, r *http.Request) {
 		writeStoreErr(w, err)
 		return
 	}
+	// A handoff record is a note that a file went somewhere, not the file.
+	if it.Kind == store.KindHandoff {
+		writeErr(w, http.StatusConflict, "not_stored")
+		return
+	}
 	path, err := s.store.BlobPath(it)
 	if err != nil {
 		writeErr(w, http.StatusNotFound, "not_found")
@@ -434,6 +449,8 @@ func writeStoreErr(w http.ResponseWriter, err error) {
 		writeErr(w, http.StatusBadRequest, "not_text")
 	case err == store.ErrSecret:
 		writeErr(w, http.StatusBadRequest, "secret_locked")
+	case err == store.ErrNotStore:
+		writeErr(w, http.StatusConflict, "not_stored")
 	default:
 		writeErr(w, http.StatusInternalServerError, "bad_request")
 	}
